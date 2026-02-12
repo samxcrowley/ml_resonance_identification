@@ -1,0 +1,6 @@
+torch
+transformers[torch]
+numpy<2.0
+matplotlib
+tqdm
+seaborn

@@ -1,6 +1,6 @@
 # Model
 
-A transformer (encoder-only) model identify/predict resonances and their properties in nuclear scattering data
+A transformer (encoder-only) model to identify/predict resonances and their properties in nuclear scattering data.
 
 # Data
 

@@ -1,5 +1,8 @@
 testing.py
 
 venv/
+data/
 
 todo.txt
+
+*.pyc

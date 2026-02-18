@@ -3,11 +3,6 @@ from torch import nn
 
 class Attention(nn.Module):
 
-    '''
-    Implements the Scaled Dot-Product Attention mechanism as outlined in the
-    Attention Is All You Need paper
-    '''
-
     def __init__(self):
 
         super().__init__()

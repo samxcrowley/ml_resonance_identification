@@ -28,6 +28,7 @@ def get_cx_sequence(path, log_cx=True, compressed=True):
     n = len(data)
 
     tensors = []
+    targets = []
     
     for i in range(n):
         
@@ -54,4 +55,12 @@ def get_cx_sequence(path, log_cx=True, compressed=True):
 
         tensors.append(tensor)
 
-    return torch.stack(tensors)
+        energy = data[i]['levels'][0]['energy']
+        energy_norm = normalise(energy, min(ys), max(ys))
+
+        targets.append(energy_norm)
+
+    return torch.stack(tensors), targets
+
+def normalise(x, min, max):
+    return (x - min) / (max - min)

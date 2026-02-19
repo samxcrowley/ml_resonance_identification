@@ -9,6 +9,8 @@ class Encoder(nn.Module):
 
         super().__init__()
 
+        self.proj = nn.Linear(max_len, d_model)
+
         self.layers = nn.ModuleList([EncoderLayer(d_model=d_model,
                                                   n_hidden=n_hidden,
                                                   n_head=n_head,
@@ -23,6 +25,8 @@ class Encoder(nn.Module):
         )
 
     def forward(self, x):
+
+        x = self.proj(x)
 
         for layer in self.layers:
             x = layer(x)

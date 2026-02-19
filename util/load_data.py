@@ -30,7 +30,7 @@ def get_cx_sequence(path, log_cx=True, compressed=True):
     tensors = []
     
     for i in range(n):
-
+        
         points = data[i]['observable_sets'][0]['points']
 
         xs = sorted(set(p[x_key] for p in points))
@@ -50,7 +50,7 @@ def get_cx_sequence(path, log_cx=True, compressed=True):
 
             x = x_idx[p[x_key]]
             y = y_idx[p[y_key]]
-            tensor[x, y] = p[z_key]
+            tensor[x, y] = z
 
         tensors.append(tensor)
 

@@ -58,9 +58,20 @@ def get_cx_sequence(path, log_cx=True, compressed=True):
         energy = data[i]['levels'][0]['energy']
         energy_norm = normalise(energy, min(ys), max(ys))
 
-        targets.append(energy_norm)
+        targets.append((energy, energy_norm))
 
     return torch.stack(tensors), targets
 
 def normalise(x, min, max):
     return (x - min) / (max - min)
+
+class EnergyLevelDataset(Dataset):
+
+    def __init__(self, path, log_cx=True, compressed=True):
+        self.tensors, self.targets = get_cx_sequence(path, log_cx, compressed)
+
+    def __len__(self):
+        return len(self.tensors)
+
+    def __getitem__(self, idx):
+        return self.tensors[idx], self.targets[idx]

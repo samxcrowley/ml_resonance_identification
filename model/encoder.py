@@ -5,11 +5,13 @@ from model.layer.encoder_layer import EncoderLayer
 
 class Encoder(nn.Module):
 
-    def __init__(self, d_model, max_len, n_hidden, n_head, n_layers, dropout_p):
+    def __init__(self, d_model, pool_kernel_size, n_hidden, n_head, n_layers, dropout_p):
 
         super().__init__()
 
-        self.proj = nn.Linear(max_len, d_model)
+        self.proj = nn.Linear(1, d_model)
+
+        self.pool = nn.AvgPool1d(kernel_size=pool_kernel_size)
 
         self.layers = nn.ModuleList([EncoderLayer(d_model=d_model,
                                                   n_hidden=n_hidden,
@@ -26,6 +28,13 @@ class Encoder(nn.Module):
 
     def forward(self, x):
 
+        if x.dim() == 3:
+            x = torch.flatten(x, start_dim=1, end_dim=-1)
+
+        x = self.pool(x)
+
+        # embedding
+        x = x.unsqueeze(-1)
         x = self.proj(x)
 
         for layer in self.layers:

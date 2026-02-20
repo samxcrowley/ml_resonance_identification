@@ -68,23 +68,8 @@ def normalise(x, min, max):
 
 class EnergyLevelDataset(Dataset):
 
-    def __init__(self, path, slice_by_angle, log_cx=True, compressed=True):
-
+    def __init__(self, path, log_cx=True, compressed=True):
         self.tensors, self.targets = get_cx_sequence(path, log_cx, compressed)
-
-        if slice_by_angle:
-
-            old_n = len(self.tensors)
-
-            # [n, A, E] -> [n * A, E]
-            self.tensors = self.tensors.reshape(-1, self.tensors.shape[-1])
-
-            new_n = len(self.tensors)
-
-            # repeat targets to match with reshaped tensors
-            self.targets = self.targets.repeat_interleave(int(new_n / old_n), dim=0)
-
-        self.slice_by_angle = slice_by_angle
 
     def __len__(self):
         return len(self.tensors)

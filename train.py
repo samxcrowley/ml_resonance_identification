@@ -3,34 +3,8 @@ from torch import nn
 from torch.utils.data import DataLoader, random_split
 
 from model import encoder
+from model import torch_encoder
 from util import load_data
-
-SEED = 22
-
-path = 'data/10.json'
-
-num_workers = 16
-batch_size = 16
-max_len = 1001
-
-d_model = 512
-n_head = 4
-n_layers = 6
-n_hidden = 1024
-dropout_p = 0.1
-
-n_epochs = 100
-lr = 1e-3
-weight_decay = 1e-4
-
-ds = load_data.EnergyLevelDataset(path, compressed=False)
-train_loader = DataLoader(
-    ds,
-    batch_size=batch_size,
-    shuffle=True,
-    num_workers=4,
-    pin_memory=True
-)
 
 def train_epoch(model, loader, loss_fn, optimiser, device):
 
@@ -42,15 +16,16 @@ def train_epoch(model, loader, loss_fn, optimiser, device):
 
     for tensor, targets in loader:
 
+        optimiser.zero_grad()
+
         tensor = tensor.to(device)
         targets = targets.to(device)
 
-        pred = model(tensor)
+        pred = model(tensor)[:, 0]
         target = targets[:, 1] # normalised energy
 
         loss = loss_fn(pred, target)
 
-        optimiser.zero_grad(set_to_none=True)
         loss.backward()
         optimiser.step()
 
@@ -81,7 +56,7 @@ def eval_epoch(model, loader, loss_fn, device):
             tensor = tensor.to(device)
             targets = targets.to(device)
 
-            pred = model(tensor)
+            pred = model(tensor)[:, 0]
             target = targets[:, 1] # normalised energy
 
             loss = loss_fn(pred, target)
@@ -97,19 +72,28 @@ def eval_epoch(model, loader, loss_fn, device):
 
     return metrics
 
-def main():
+def train(params, model):
+
+    seed = params['seed']
+    data_path = params['data_path']
+    data_is_compressed = params['data_is_compressed']
+    num_workers = params['num_workers']
+    batch_size = params['batch_size']
+    n_epochs = params['n_epochs']
+    lr = params['lr']
+    weight_decay = params['weight_decay']
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f'Using device: {device}')
 
-    dataset = load_data.EnergyLevelDataset(path, compressed=False)
+    dataset = load_data.EnergyLevelDataset(data_path, compressed=data_is_compressed)
 
     train_size = int(0.8 * len(dataset))
     val_size = len(dataset) - train_size
     
     train_dataset, val_dataset = random_split(dataset, \
                                      [train_size, val_size], \
-                                        generator=torch.Generator().manual_seed(SEED))
+                                        generator=torch.Generator().manual_seed(seed))
 
     print(f'Training size: {len(train_dataset)}')
     print(f'Validation size: {len(val_dataset)}')
@@ -124,12 +108,13 @@ def main():
                             shuffle=True,
                             num_workers=num_workers)
 
-    model = encoder.Encoder(d_model, max_len, n_hidden, n_head, n_layers, dropout_p)
     model.to(device)
+
+    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 
     loss_fn = nn.MSELoss()
 
-    optimiser = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    optimiser = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimiser, mode='min', factor=0.5, patience=5)
 
     results = {
@@ -151,10 +136,14 @@ def main():
 
         if epoch % 1 == 0:
             print(
-                f'Epoch {epoch:02d} '
+                f'Epoch {epoch} '
                 f'| train loss {train_m["loss"]:.4f} '
                 f'| val loss {val_m["loss"]:.4f}'
             )
 
-if __name__ == '__main__':
-    main()
+        # model parameters
+        # for name, param in model.named_parameters():
+        #     if param.grad is not None:
+        #         print(f"Layer: {name} | Gradients: {param.grad.norm()}")
+        #     else:
+        #         print(f"Layer: {name} | Gradients: None")

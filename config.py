@@ -4,17 +4,15 @@ import transforms
 
 class Config(Enum):
 
-    RESNET34 = 0
-    ENCODER = 1
+    RESNET34 = (models._resnet34_model(), transforms._resnet34_transform())
+    ENCODER = (models._encoder_model(), transforms._encoder_transform())
+
+    def __init__(self, model, transform):
+        self.model = model
+        self.transform = transform
 
     def get_model(self):
-        if self == self.RESNET34:
-            return models._resnet34_model()
-        elif self == self.ENCODER:
-            return models._encoder_model()
+        return self.model
         
     def get_transform(self):
-        if self == self.RESNET34:
-            return transforms._resnet34_transform()
-        elif self == self.ENCODER:
-            return transfomrs._encoder_transform()
+        return self.transform

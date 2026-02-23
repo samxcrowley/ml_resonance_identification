@@ -85,7 +85,7 @@ def train(params, transform, target, model):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f'Using device: {device}')
 
-    dataset = data.EnergyLevelDataset(data_path, transform=transform, compressed=data_is_compressed)
+    dataset = data.ResonanceDataset(data_path, transform=transform, compressed=data_is_compressed)
 
     train_size = int(0.8 * len(dataset))
     val_size = len(dataset) - train_size

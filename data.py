@@ -108,7 +108,7 @@ def display_image(img, name):
     plt.axis('off')
     plt.savefig(f'out/image/{name}')
 
-class EnergyLevelDataset(Dataset):
+class ResonanceDataset(Dataset):
 
     def __init__(self, path, transform=None, log_cx=True, compressed=True):
         self.tensors = get_tensors(path, log_cx, compressed)

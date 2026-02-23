@@ -5,7 +5,7 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset
 import matplotlib.pyplot as plt
-from transform import transforms
+import transforms
 
 # x, y are the axes and z is the value at each point
 x_key = 'theta_cm_out'

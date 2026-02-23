@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import Dataset
+import matplotlib.pyplot as plt
 
 # x, y are the axes and z is the value at each point
 x_key = 'theta_cm_out'
@@ -66,6 +67,23 @@ def get_cx_sequence(path, log_cx=True, compressed=True):
 def normalise(x, min, max):
     return (x - min) / (max - min)
 
+# display a tensor of shape [H, W]
+def display_tensor(tensor, name):
+
+    tensor = tensor.permute(1, 0)
+
+    plt.figure(figsize=(10, 6))
+    plt.imshow(tensor.numpy(), cmap='viridis', aspect='auto')
+    plt.colorbar()
+    plt.savefig(f'out/tensor/{name}')
+
+# display an RGB image
+def display_image(img, name):
+    
+    plt.figure(figsize=(10, 6))
+    plt.imshow(img.permute(1, 2, 0).numpy(), aspect='auto')
+    plt.axis('off')
+    plt.savefig(f'out/image/{name}')
 
 class EnergyLevelDataset(Dataset):
 

@@ -1,3 +1,4 @@
+from enum import Enum
 import torch
 from torch import nn
 import torchvision.models
@@ -6,11 +7,13 @@ import transforms
 import load_data
 import targets
 import model.models as models
+import config
 
+# set training parameters and model hyperparameters
 params = {
     'seed': 22,
 
-    'data_path': 'data/10.json',
+    'data_path': 'data/1000.json',
     'data_is_compressed': False,
 
     'num_workers': 8,
@@ -20,8 +23,14 @@ params = {
     'weight_decay': 1e-4
 }
 
-model = models._resnet34_model()
-transform = transforms._resnet34_transform(sobel=False)
-target = targets.Target.SINGLE_RES_ENERGY_LEVEL_NORM
+# set config (model + transforms)
+config = config.Config.RESNET34
 
+model = config.get_model()
+transform = config.get_transform()
+
+# set prediction target
+target = targets.Target.SINGLE_RES_ENERGY_LEVEL
+
+# train the model and output training results
 train.train(params, transform, target, model)

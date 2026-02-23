@@ -66,10 +66,12 @@ def get_cx_sequence(path, log_cx=True, compressed=True):
 def normalise(x, min, max):
     return (x - min) / (max - min)
 
+
 class EnergyLevelDataset(Dataset):
 
-    def __init__(self, path, log_cx=True, compressed=True):
+    def __init__(self, path, transform=None, log_cx=True, compressed=True):
         self.tensors, self.targets = get_cx_sequence(path, log_cx, compressed)
+        self.transform = transform
 
     def __len__(self):
         return len(self.tensors)
@@ -78,5 +80,8 @@ class EnergyLevelDataset(Dataset):
 
         tensor = self.tensors[idx]
         target = self.targets[idx]
+
+        if self.transform:
+            tensor = self.transform(tensor)
 
         return tensor, target

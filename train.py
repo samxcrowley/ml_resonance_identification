@@ -4,7 +4,7 @@ from torch.utils.data import DataLoader, random_split
 
 from model import encoder
 from model import torch_encoder
-from util import load_data
+from load_data
 
 def train_epoch(model, loader, loss_fn, optimiser, device):
 
@@ -140,10 +140,3 @@ def train(params, transform, model):
                 f'| train loss {train_m["loss"]:.4f} '
                 f'| val loss {val_m["loss"]:.4f}'
             )
-
-        # model parameters
-        # for name, param in model.named_parameters():
-        #     if param.grad is not None:
-        #         print(f"Layer: {name} | Gradients: {param.grad.norm()}")
-        #     else:
-        #         print(f"Layer: {name} | Gradients: None")

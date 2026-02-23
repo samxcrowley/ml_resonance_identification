@@ -72,7 +72,7 @@ def eval_epoch(model, loader, loss_fn, device):
 
     return metrics
 
-def train(params, model):
+def train(params, transform, model):
 
     seed = params['seed']
     data_path = params['data_path']
@@ -86,7 +86,7 @@ def train(params, model):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f'Using device: {device}')
 
-    dataset = load_data.EnergyLevelDataset(data_path, compressed=data_is_compressed)
+    dataset = load_data.EnergyLevelDataset(data_path, transform=transform, compressed=data_is_compressed)
 
     train_size = int(0.8 * len(dataset))
     val_size = len(dataset) - train_size

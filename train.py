@@ -1,10 +1,9 @@
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, random_split
-
 from model import encoder
 from model import torch_encoder
-from load_data
+import load_data
 
 def train_epoch(model, loader, loss_fn, optimiser, device):
 

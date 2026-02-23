@@ -58,7 +58,7 @@ def get_cx_sequence(path, log_cx=True, compressed=True):
         tensors.append(tensor)
 
         energy = data[i]['levels'][0]['energy']
-        energy_norm = transforms.normalise(energy, min(ys), max(ys))
+        energy_norm = transforms._normalise(energy, min=min(ys), max=max(ys))
 
         target = torch.tensor([energy, energy_norm])
         targets.append(target)

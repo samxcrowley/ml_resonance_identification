@@ -3,7 +3,7 @@ import torch.nn.functional as F
 import torchvision.transforms
 import load_data
 
-def _resnet34_transform(sobel=True):
+def _resnet34_transform(sobel=False):
 
     ls = []
 
@@ -12,6 +12,18 @@ def _resnet34_transform(sobel=True):
         ls.append(_lambda(lambda x: _sobel(x)))
     ls.append(_lambda(lambda x: x.repeat(3, 1, 1)))
     ls.append(torchvision.models.ResNet34_Weights.DEFAULT.transforms())
+
+    transform = torchvision.transforms.Compose(ls)
+
+    return transform
+
+def _encoder_transform(sobel=False):
+
+    ls = []
+
+    ls.append(_lambda(lambda x: _normalise(x)))
+    if sobel:
+        ls.append(_lambda(lambda x: _sobel(x)))
 
     transform = torchvision.transforms.Compose(ls)
 

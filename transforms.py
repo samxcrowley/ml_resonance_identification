@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
 import torchvision.transforms
-import load_data
+import data
 
 def _resnet34_transform(sobel=False):
 

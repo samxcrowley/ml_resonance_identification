@@ -4,7 +4,7 @@ from torch import nn
 import torchvision.models
 import train
 import transforms
-import load_data
+import data
 import targets
 import model.models as models
 import config

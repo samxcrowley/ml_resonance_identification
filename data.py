@@ -70,8 +70,9 @@ def get_targets(path, compressed=True):
         energy_norm = transforms._normalise(energy, min=min(ys), max=max(ys))
 
         gamma_total = data[i]['levels'][0]['Gamma_total']
+        log_gamma_total = float(np.log10(gamma_total))
 
-        target = torch.tensor([energy, energy_norm, gamma_total])
+        target = torch.tensor([energy, energy_norm, gamma_total, log_gamma_total])
         targets.append(target)
 
     return targets

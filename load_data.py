@@ -5,6 +5,7 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset
 import matplotlib.pyplot as plt
+from transform import transforms
 
 # x, y are the axes and z is the value at each point
 x_key = 'theta_cm_out'
@@ -57,15 +58,12 @@ def get_cx_sequence(path, log_cx=True, compressed=True):
         tensors.append(tensor)
 
         energy = data[i]['levels'][0]['energy']
-        energy_norm = normalise(energy, min(ys), max(ys))
+        energy_norm = transforms.normalise(energy, min(ys), max(ys))
 
         target = torch.tensor([energy, energy_norm])
         targets.append(target)
 
     return torch.stack(tensors), torch.stack(targets)
-
-def normalise(x, min, max):
-    return (x - min) / (max - min)
 
 # display a tensor of shape [H, W]
 def display_tensor(tensor, name):

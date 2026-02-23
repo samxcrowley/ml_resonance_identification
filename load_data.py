@@ -16,21 +16,13 @@ z_key = 'dsdO'
 # [n, n_A, n_E]
 # output target shape:
 # [n]
-def get_cx_sequence(path, log_cx=True, compressed=True):
+def get_tensors(path, log_cx=True, compressed=True):
 
-    if compressed:
-        with gzip.open(path, 'rb') as f:
-            json_bytes = f.read()
-            json_str = json_bytes.decode()
-            data = json.loads(json_str)
-    else:
-        with open(path, 'r') as f:
-            data = json.load(f)
+    data = open_file(path, compressed)
 
     n = len(data)
 
     tensors = []
-    targets = []
     
     for i in range(n):
         
@@ -57,13 +49,45 @@ def get_cx_sequence(path, log_cx=True, compressed=True):
 
         tensors.append(tensor)
 
+    return tensors
+
+def get_targets(path, compressed=True):
+
+    data = open_file(path, compressed)
+
+    n = len(data)
+
+    targets = []
+    
+    for i in range(n):
+
+        points = data[i]['observable_sets'][0]['points']
+
+        xs = sorted(set(p[x_key] for p in points))
+        ys = sorted(set(p[y_key] for p in points))
+
         energy = data[i]['levels'][0]['energy']
         energy_norm = transforms._normalise(energy, min=min(ys), max=max(ys))
 
-        target = torch.tensor([energy, energy_norm])
+        gamma_total = data[i]['levels'][0]['Gamma_total']
+
+        target = torch.tensor([energy, energy_norm, gamma_total])
         targets.append(target)
 
-    return torch.stack(tensors), torch.stack(targets)
+    return targets
+
+def open_file(path, compressed=True):
+
+    if compressed:
+        with gzip.open(path, 'rb') as f:
+            json_bytes = f.read()
+            json_str = json_bytes.decode()
+            data = json.loads(json_str)
+    else:
+        with open(path, 'r') as f:
+            data = json.load(f)
+
+    return data
 
 # display a tensor of shape [H, W]
 def display_tensor(tensor, name):
@@ -86,7 +110,8 @@ def display_image(img, name):
 class EnergyLevelDataset(Dataset):
 
     def __init__(self, path, transform=None, log_cx=True, compressed=True):
-        self.tensors, self.targets = get_cx_sequence(path, log_cx, compressed)
+        self.tensors = get_tensors(path, log_cx, compressed)
+        self.targets = get_targets(path, compressed)
         self.transform = transform
 
     def __len__(self):

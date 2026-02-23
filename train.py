@@ -5,7 +5,7 @@ from model import encoder
 from model import torch_encoder
 import load_data
 
-def train_epoch(model, loader, loss_fn, optimiser, device):
+def train_epoch(model, loader, _target, loss_fn, optimiser, device):
 
     model.train()
 
@@ -21,7 +21,7 @@ def train_epoch(model, loader, loss_fn, optimiser, device):
         targets = targets.to(device)
 
         pred = model(tensor)[:, 0]
-        target = targets[:, 1] # normalised energy
+        target = targets[:, _target.value]
 
         loss = loss_fn(pred, target)
 
@@ -40,7 +40,7 @@ def train_epoch(model, loader, loss_fn, optimiser, device):
 
     return metrics
 
-def eval_epoch(model, loader, loss_fn, device):
+def eval_epoch(model, loader, _target, loss_fn, device):
 
     model.eval()
 
@@ -56,7 +56,7 @@ def eval_epoch(model, loader, loss_fn, device):
             targets = targets.to(device)
 
             pred = model(tensor)[:, 0]
-            target = targets[:, 1] # normalised energy
+            target = targets[:, _target.value]
 
             loss = loss_fn(pred, target)
 
@@ -71,7 +71,7 @@ def eval_epoch(model, loader, loss_fn, device):
 
     return metrics
 
-def train(params, transform, model):
+def train(params, transform, target, model):
 
     seed = params['seed']
     data_path = params['data_path']
@@ -124,8 +124,8 @@ def train(params, transform, model):
 
     for epoch in range(1, n_epochs + 1):
 
-        train_m = train_epoch(model, train_loader, loss_fn, optimiser, device)
-        val_m = eval_epoch(model, val_loader, loss_fn, device)
+        train_m = train_epoch(model, train_loader, target, loss_fn, optimiser, device)
+        val_m = eval_epoch(model, val_loader, target, loss_fn, device)
 
         scheduler.step(val_m['loss'])
 

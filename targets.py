@@ -4,11 +4,13 @@ from torch import nn
 
 class Target(Enum):
 
-    ENERGY_LEVEL = 0
-    GAMMA_TOTAL = 1
-    SEGMENTS = 2
+    ENERGY_LEVEL = ('energy_level', 0)
+    GAMMA_TOTAL = ('gamma_total', 1)
+    SEGMENTS = ('segments', 2)
 
-    def __init__(self, n_classes=0):
+    def __init__(self, key, index, n_classes=0):
+        self.key = key
+        self.index = index
         self.n_classes = n_classes
 
     def get(self, targets):
@@ -20,7 +22,7 @@ class Target(Enum):
 
             return None
 
-        target = targets[:, :, self.value]
+        target = targets[:, :, self.index]
 
         return target
 

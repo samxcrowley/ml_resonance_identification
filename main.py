@@ -7,14 +7,37 @@ import transforms
 import data
 import targets
 import model.models as models
-import config
+from config import Config
+from targets import Target
 import header
+import sys
+
+def enum_from_key(enum, key):
+    for config in enum:
+        if config.key == key:
+            return config
+    raise ValueError(f'No {enum} member with key {key}')
 
 # set model config
-config = config.Config.RESNET34_SEGMENTATION
+config_key = sys.argv[1]
+config = enum_from_key(Config, config_key)
+
+model = config.get_model()
+transform = config.get_transform()
+is_multi_resonance = config.is_multi_resonance()
 
 # set prediction target
-target = targets.Target.SEGMENTS
+target_key = sys.argv[2]
+target = enum_from_key(Target, target_key)
+
+print('\n--------------------------------\n')
+if is_multi_resonance:
+    print(f'Multi resonance task starting...')
+else:
+    print(f'Single resonance task starting...')
+print(f'\nConfig: {config}')
+print(f'Target: {target}')
+print('\n--------------------------------\n')
 
 # set training parameters and hyperparameters
 params = {
@@ -26,9 +49,9 @@ params = {
     'n_epochs': 250,
     'lr': 2e-4,
     'weight_decay': 1e-4,
-    'is_multi_resonance': config.is_multi_resonance(),
-    'model': config.get_model(),
-    'transform': config.get_transform(),
+    'is_multi_resonance': is_multi_resonance,
+    'model': model,
+    'transform': transform,
     'target': target
 }
 

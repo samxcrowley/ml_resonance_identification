@@ -52,7 +52,7 @@ def get_tensors(data_filename, log_cx=True, compressed=True):
 
     return tensors
 
-def get_targets(data_filename, compressed=True):
+def get_single_res_targets(data_filename, compressed=True):
 
     data = open_file(f'data/{data_filename}', compressed)
 
@@ -83,12 +83,26 @@ def get_targets(data_filename, compressed=True):
             gamma_total = float(np.log10(gamma_total))
             target[n, Target.GAMMA_TOTAL.value] = float(gamma_total)
 
-            n_resonances = transforms._normalise(n_resonances, 0, 10)
-            target[0, Target.MASK.value] = n_resonances
-
         targets.append(target)
 
     return torch.stack(targets, dim=0)
+
+def get_multi_res_targets(data_filename, compressed=True):
+
+    data = open_file(f'data/{data_filename}', compressed)
+
+    n = len(data)
+    
+    for i in range(n):
+
+        points = data[i]['observable_sets'][0]['points']
+
+        xs = sorted(set(p[x_key] for p in points))
+        ys = sorted(set(p[y_key] for p in points))
+
+        n_resonances = len(data[i]['levels'])
+
+    return None
 
 def open_file(path, compressed=True):
 
@@ -123,9 +137,15 @@ def display_image(img, name):
 
 class ResonanceDataset(Dataset):
 
-    def __init__(self, path, transform=None, log_cx=True, compressed=True):
+    def __init__(self, path, multi_resonance=False, transform=None, log_cx=True, compressed=True):
+
         self.tensors = get_tensors(path, log_cx, compressed)
-        self.targets = get_targets(path, compressed)
+
+        if multi_resonance:
+            self.targets = get_multi_res_targets(path, compressed)
+        else:
+            self.targets = get_single_res_targets(path, compressed)
+
         self.transform = transform
 
     def __len__(self):

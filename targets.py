@@ -1,28 +1,28 @@
 from enum import Enum
 import torch
+from torch import nn
 
 class Target(Enum):
 
     ENERGY_LEVEL = 0
     GAMMA_TOTAL = 1
-    MASK = 2
+    SEGMENTS = 2
 
     def __init__(self, n_classes=0):
         self.n_classes = n_classes
 
     def get(self, targets):
-        
-        if (self == Target.ENERGY_LEVEL or
-                        self == Target.GAMMA_TOTAL):
 
-            target = targets[:, :, Target.ENERGY_LEVEL.value]
+        if self == Target.SEGMENTS:
+            return None
 
-            return target
+        target = targets[:, :, self.value]
 
-        elif (self == Target.MASK):
+        return target
 
-            target = targets[:, 0, self.value]
-            print(target)
-            # target = target.unsqueeze(1)
+    def loss_fn(self):
 
-            return target
+        if self == Target.SEGMENTS:
+            return None
+
+        return nn.CrossEntropyLoss()

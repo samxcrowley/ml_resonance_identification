@@ -6,6 +6,7 @@ import torch
 from torch.utils.data import Dataset
 import matplotlib.pyplot as plt
 import transforms
+from targets import Target
 
 # x, y are the axes and z is the value at each point
 x_key = 'theta_cm_out'
@@ -66,16 +67,28 @@ def get_targets(data_filename, compressed=True):
         xs = sorted(set(p[x_key] for p in points))
         ys = sorted(set(p[y_key] for p in points))
 
-        energy = data[i]['levels'][0]['energy']
-        energy_norm = transforms._normalise(energy, min=min(ys), max=max(ys))
+        n_resonances = len(data[i]['levels'])
 
-        gamma_total = data[i]['levels'][0]['Gamma_total']
-        log_gamma_total = float(np.log10(gamma_total))
+        target = torch.zeros(10, len(Target), dtype=torch.float32)
 
-        target = torch.tensor([energy, energy_norm, gamma_total, log_gamma_total])
+        for n in range(n_resonances):
+
+            level = data[i]['levels'][n]
+
+            energy = level['energy']
+            energy = transforms._normalise(energy, min=min(ys), max=max(ys))
+            target[n, Target.ENERGY_LEVEL.value] = float(energy)
+
+            gamma_total = level['Gamma_total']
+            gamma_total = float(np.log10(gamma_total))
+            target[n, Target.GAMMA_TOTAL.value] = float(gamma_total)
+
+            n_resonances = transforms._normalise(n_resonances, 0, 10)
+            target[0, Target.MASK.value] = n_resonances
+
         targets.append(target)
 
-    return targets
+    return torch.stack(targets, dim=0)
 
 def open_file(path, compressed=True):
 

@@ -7,7 +7,7 @@ def _resnet34_model():
     _model = torchvision.models.resnet34()
 
     fc_in = _model.fc.in_features
-    fc_out = 1
+    fc_out = 10
     _model.fc = nn.Linear(fc_in, fc_out)
 
     return _model

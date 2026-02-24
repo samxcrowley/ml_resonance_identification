@@ -5,6 +5,19 @@ from model import encoder
 from model import torch_encoder
 import data
 
+def run_batch(tensor, targets, _target, model, loss_fn, device):
+
+    tensor = tensor.to(device)
+    targets = targets.to(device)
+
+    pred = model(tensor)
+    target = _target.get(targets)
+
+    loss = loss_fn(pred, target)
+
+    return loss
+
+
 def train_epoch(model, loader, _target, loss_fn, optimiser, device):
 
     model.train()
@@ -17,15 +30,10 @@ def train_epoch(model, loader, _target, loss_fn, optimiser, device):
 
         optimiser.zero_grad()
 
-        tensor = tensor.to(device)
-        targets = targets.to(device)
-
-        pred = model(tensor)[:, 0]
-        target = targets[:, _target.value]
-
-        loss = loss_fn(pred, target)
+        loss = run_batch(tensor, targets, _target, model, loss_fn, device)
 
         loss.backward()
+
         optimiser.step()
 
         with torch.no_grad():
@@ -52,13 +60,7 @@ def eval_epoch(model, loader, _target, loss_fn, device):
 
         for tensor, targets in loader:
 
-            tensor = tensor.to(device)
-            targets = targets.to(device)
-
-            pred = model(tensor)[:, 0]
-            target = targets[:, _target.value]
-
-            loss = loss_fn(pred, target)
+            loss = run_batch(tensor, targets, _target, model, loss_fn, device)
 
             running_stats['loss'] += loss.item() * tensor.size(0)
             running_stats['count'] += tensor.size(0)
@@ -71,7 +73,7 @@ def eval_epoch(model, loader, _target, loss_fn, device):
 
     return metrics
 
-def train(params, transform, target, model):
+def train(params, transform, target, model, loss_fn, epoch_n_print=5):
 
     seed = params['seed']
     data_filename = params['data_filename']
@@ -111,8 +113,6 @@ def train(params, transform, target, model):
 
     torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 
-    loss_fn = nn.MSELoss()
-
     optimiser = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimiser, mode='min', factor=0.5, patience=5)
 
@@ -133,7 +133,7 @@ def train(params, transform, target, model):
         results['train_loss'].append(train_m['loss'])
         results['val_loss'].append(val_m['loss'])
 
-        if epoch % 1 == 0:
+        if epoch % epoch_n_print == 0:
             print(
                 f'Epoch {epoch} '
                 f'| train loss {train_m["loss"]:.4f} '

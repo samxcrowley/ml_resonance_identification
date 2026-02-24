@@ -16,9 +16,9 @@ z_key = 'dsdO'
 # [n, n_A, n_E]
 # output target shape:
 # [n]
-def get_tensors(path, log_cx=True, compressed=True):
+def get_tensors(data_filename, log_cx=True, compressed=True):
 
-    data = open_file(path, compressed)
+    data = open_file(f'data/{data_filename}', compressed)
 
     n = len(data)
 
@@ -51,9 +51,9 @@ def get_tensors(path, log_cx=True, compressed=True):
 
     return tensors
 
-def get_targets(path, compressed=True):
+def get_targets(data_filename, compressed=True):
 
-    data = open_file(path, compressed)
+    data = open_file(f'data/{data_filename}', compressed)
 
     n = len(data)
 

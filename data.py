@@ -102,6 +102,9 @@ def get_multi_res_targets(data_filename, compressed=True):
 
         n_resonances = len(data[i]['levels'])
 
+        # TODO: create segmentation target data
+        print('TODO: create segmentation target data')
+
     return None
 
 def open_file(path, compressed=True):

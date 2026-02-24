@@ -14,6 +14,10 @@ class Target(Enum):
     def get(self, targets):
 
         if self == Target.SEGMENTS:
+
+            # TODO: get segmentation target data
+            print('# TODO: get segmentation target data')
+
             return None
 
         target = targets[:, :, self.value]
@@ -23,6 +27,10 @@ class Target(Enum):
     def loss_fn(self):
 
         if self == Target.SEGMENTS:
+            
+            # TODO: segmentation loss function
+            print('# TODO: segmentation loss function')
+
             return None
 
         return nn.CrossEntropyLoss()

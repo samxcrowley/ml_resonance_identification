@@ -75,21 +75,25 @@ def eval_epoch(model, loader, _target, device):
 
     return metrics
 
-def train(params, transform, target, model, epoch_n_print=5):
+def train(params, epoch_n_print=5):
 
     seed = params['seed']
     data_filename = params['data_filename']
-    data_is_compressed = params['data_is_compressed']
+    is_data_compressed = params['is_data_compressed']
     num_workers = params['num_workers']
     batch_size = params['batch_size']
     n_epochs = params['n_epochs']
     lr = params['lr']
     weight_decay = params['weight_decay']
+    is_multi_resonance = params['is_multi_resonance']
+    model = params['model']
+    transform = params['transform']
+    target = params['target']
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f'Using device: {device}')
 
-    dataset = data.ResonanceDataset(data_filename, transform=transform, compressed=data_is_compressed)
+    dataset = data.ResonanceDataset(data_filename, multi_resonance=is_multi_resonance, transform=transform, compressed=is_data_compressed)
 
     train_size = int(0.8 * len(dataset))
     val_size = len(dataset) - train_size

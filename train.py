@@ -4,6 +4,7 @@ from torch.utils.data import DataLoader, random_split
 from model import encoder
 from model import torch_encoder
 import data
+from config import Config
 
 def run_batch(tensor, targets, _target, model, device):
 
@@ -86,9 +87,10 @@ def train(params, epoch_n_print=5):
     lr = params['lr']
     weight_decay = params['weight_decay']
     is_multi_resonance = params['is_multi_resonance']
-    model = params['model']
-    transform = params['transform']
-    target = params['target']
+
+    config = Config.from_key(params['config'])
+    model = config.get_model()
+    transform = config.get_transform()
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f'Using device: {device}')

@@ -40,6 +40,9 @@ class Config(Enum):
 
     def is_multi_resonance(self):
         return self.multi_resonance
+        
+    @classmethod
+    def from_key(cls, key):
         for config in cls:
             if config.key == key:
                 return config

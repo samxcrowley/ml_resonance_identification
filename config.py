@@ -1,13 +1,22 @@
 from enum import Enum
 import model.models as models
+import model
 import transforms
 
 class Config(Enum):
 
+    DETR = (
+        'detr',
+        model.detr.DETR,
+        transforms._resnet34_transform()
+        True
+    )
+
     RESNET34_SINGLE_RES = (
         'resnet34_single_res',
         models._resnet34_single_res_model(),
-        transforms._resnet34_transform()
+        transforms._resnet34_transform(),
+        False
     )
 
     RESNET34_SEGMENTATION = (
@@ -21,9 +30,10 @@ class Config(Enum):
         'encoder',
         models._encoder_model(),
         transforms._encoder_transform(),
+        True,
     )
 
-    def __init__(self, key, model, transform, multi_resonance=False):
+    def __init__(self, key, model, transform, multi_resonance):
         self.key = key
         self.model = model
         self.transform = transform

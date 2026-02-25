@@ -4,21 +4,15 @@ from torch import nn
 
 class Target(Enum):
 
-    ENERGY_LEVEL = ('energy_level', 0)
-    GAMMA_TOTAL = ('gamma_total', 1)
-    SEGMENTS = ('segments', 2)
-
-    def __init__(self, key, index, n_classes=0):
-        self.key = key
-        self.index = index
-        self.n_classes = n_classes
+    ENERGY_LEVEL = 0
+    GAMMA_TOTAL = 1
+    DETR_TARGET = 2
 
     def get(self, targets):
 
-        if self == Target.SEGMENTS:
+        if self == Target.DETR_TARGET:
 
-            # TODO: get segmentation target data
-            print('# TODO: get segmentation target data')
+            # TODO: detr target operation
 
             return None
 
@@ -28,10 +22,9 @@ class Target(Enum):
 
     def loss_fn(self):
 
-        if self == Target.SEGMENTS:
+        if self == Target.DETR_TARGET:
             
-            # TODO: segmentation loss function
-            print('# TODO: segmentation loss function')
+            # TODO: detr loss function
 
             return None
 

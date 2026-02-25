@@ -14,7 +14,7 @@ y_key = 'cn_ex'
 z_key = 'dsdO'
 
 # output sequence shape:
-# [n, n_A, n_E]
+# [n, E, A]
 # output target shape:
 # [n]
 def get_tensors(data_filename, log_cx=True, compressed=True):
@@ -46,7 +46,7 @@ def get_tensors(data_filename, log_cx=True, compressed=True):
 
             x = x_idx[p[x_key]]
             y = y_idx[p[y_key]]
-            tensor[x, y] = z
+            tensor[y, x] = z
 
         tensors.append(tensor)
 
@@ -86,26 +86,6 @@ def get_single_res_targets(data_filename, compressed=True):
         targets.append(target)
 
     return torch.stack(targets, dim=0)
-
-def get_multi_res_targets(data_filename, compressed=True):
-
-    data = open_file(f'data/{data_filename}', compressed)
-
-    n = len(data)
-    
-    for i in range(n):
-
-        points = data[i]['observable_sets'][0]['points']
-
-        xs = sorted(set(p[x_key] for p in points))
-        ys = sorted(set(p[y_key] for p in points))
-
-        n_resonances = len(data[i]['levels'])
-
-        # TODO: create segmentation target data
-        print('TODO: create segmentation target data')
-
-    return None
 
 def open_file(path, compressed=True):
 

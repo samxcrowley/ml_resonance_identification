@@ -1,15 +1,18 @@
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, random_split
-from model import encoder
-from model import torch_encoder
 import data
 from config import Config
 
 def run_batch(tensor, targets, _target, model, device):
 
     tensor = tensor.to(device)
-    targets = targets.to(device)
+
+    if type(targets) is list:
+        for target in targets:
+            target = target.to(device)
+    else:
+        targets = targets.to(device)
 
     pred = model(tensor)
 
@@ -91,6 +94,7 @@ def train(params, epoch_n_print=5):
     config = Config.from_key(params['config'])
     model = config.get_model()
     transform = config.get_transform()
+    target = config.get_target()
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f'Using device: {device}')

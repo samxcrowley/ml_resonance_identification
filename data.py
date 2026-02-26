@@ -35,7 +35,7 @@ def get_tensors(data_filename, log_cx=True, compressed=True):
         x_idx = {x: i for i, x in enumerate(xs)}
         y_idx = {y: i for i, y in enumerate(ys)}
         
-        tensor = torch.zeros(len(xs), len(ys))
+        tensor = torch.zeros(len(ys), len(xs))
 
         for p in points:
 
@@ -171,8 +171,9 @@ class ResonanceDataset(Dataset):
     def __init__(self, path, multi_resonance=False, transform=None, log_cx=True, compressed=True):
 
         self.tensors = get_tensors(path, log_cx, compressed)
+        self.multi_resonance = multi_resonance
 
-        if multi_resonance:
+        if self.multi_resonance:
             self.targets = get_multi_res_targets(path, compressed)
         else:
             self.targets = get_single_res_targets(path, compressed)
@@ -185,7 +186,11 @@ class ResonanceDataset(Dataset):
     def __getitem__(self, idx):
 
         tensor = self.tensors[idx]
-        target = self.targets[idx]
+        
+        if self.multi_resonance:
+            target = (self.targets[0][idx], self.targets[1][idx])
+        else:
+            target = self.targets[idx]
 
         if self.transform:
             tensor = self.transform(tensor)

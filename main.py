@@ -5,10 +5,8 @@ import torchvision.models
 import train
 import transforms
 import data
-import targets
 import model.models as models
 from config import Config
-from targets import Target
 import header
 import sys
 import json

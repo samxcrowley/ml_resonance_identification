@@ -13,6 +13,9 @@ def run_batch(tensor, targets, _target, model, device):
     targets = _target.get_targets(targets)
     targets = targets.to(device)
 
+    # print(preds[:20])
+    # print(targets[:20])
+
     loss_fn = _target.get_loss_fn()
     loss = loss_fn(preds, targets)
 
@@ -33,6 +36,8 @@ def train_epoch(model, loader, _target, optimiser, device):
         loss = run_batch(tensor, targets, _target, model, device)
 
         loss.backward()
+
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 
         optimiser.step()
 
@@ -83,7 +88,6 @@ def train(params, epoch_n_print=5):
     n_epochs = params['n_epochs']
     lr = params['lr']
     weight_decay = params['weight_decay']
-    is_multi_resonance = params['is_multi_resonance']
 
     config = Config.from_key(params['config'])
     model = config.get_model()
@@ -93,7 +97,7 @@ def train(params, epoch_n_print=5):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f'Using device: {device}')
 
-    dataset = data.ResonanceDataset(data_filename, multi_resonance=is_multi_resonance, transform=transform, compressed=is_data_compressed)
+    dataset = data.ResonanceDataset(data_filename, transform=transform, compressed=is_data_compressed)
 
     train_size = int(0.8 * len(dataset))
     val_size = len(dataset) - train_size
@@ -112,12 +116,10 @@ def train(params, epoch_n_print=5):
     
     val_loader = DataLoader(val_dataset,
                             batch_size=batch_size,
-                            shuffle=True,
+                            shuffle=False,
                             num_workers=num_workers)
 
     model.to(device)
-
-    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 
     optimiser = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimiser, mode='min', factor=0.5, patience=5)

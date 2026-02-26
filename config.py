@@ -11,41 +11,42 @@ class Config(Enum):
 
     DETR = (
         'detr',
-        DETR_Model(),
+        DETR_Model,
         transforms._resnet34_transform(),
-        Target.ALL,
-        True
+        Target.DETR
+    )
+
+    ENERGY = (
+        'energy',
+        RESNET34_Reg_Model,
+        transforms._resnet34_transform(sobel=True),
+        Target.ENERGY
     )
 
     N_RES = (
         'n_res',
-        RESNET34_Reg_Model(),
+        RESNET34_Reg_Model,
         transforms._resnet34_transform(sobel=True),
-        Target.N_RES,
-        True
+        Target.N_RES
     )
 
-    def __init__(self, key, model, transform, target, multi_resonance):
+    def __init__(self, key, model, transform, target):
         self.key = key
         self.model = model
         self.transform = transform
         self.target = target
-        self.multi_resonance = multi_resonance
 
     def get_key(self):
         return self.key
 
     def get_model(self):
-        return self.model
+        return self.model()
         
     def get_transform(self):
         return self.transform
 
     def get_target(self):
         return self.target
-
-    def is_multi_resonance(self):
-        return self.multi_resonance
         
     @classmethod
     def from_key(cls, key):

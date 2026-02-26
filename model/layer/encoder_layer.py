@@ -1,8 +1,5 @@
 from torch import nn
-
-from model.layer.multihead_attention import MultiheadAttention
-from model.layer.feed_forward import PositionwiseFeedForward
-from model.layer.layer_norm import LayerNorm
+import torch.nn.functional as F
 
 class EncoderLayer(nn.Module):
 
@@ -10,36 +7,35 @@ class EncoderLayer(nn.Module):
 
         super().__init__()
 
-        self.attention = MultiheadAttention(d_model=d_model, n_head=n_head)
-        self.norm1 = LayerNorm(d_model=d_model)
+        self.attention = nn.MultiheadAttention(d_model, n_head, batch_first=True)
+        self.norm1 = nn.LayerNorm(d_model)
         self.dropout1 = nn.Dropout(p=dropout_p)
 
-        self.ffn = PositionwiseFeedForward(d_model=d_model, n_hidden=n_hidden, dropout_p=dropout_p)
-        self.norm2 = LayerNorm(d_model=d_model)
-        self.dropout2 = nn.Dropout(p=dropout_p)
+        self.linear1 = nn.Linear(d_model, n_hidden)
+        self.dropout = nn.Dropout(dropout_p)
+        self.linear2 = nn.Linear(n_hidden, d_model)
+        self.norm2 = nn.LayerNorm(d_model)
 
-    def forward(self, x):
+    def forward(self, x, pos_enc):
 
-        '''
-        Composed of two sub-layers, multihead attention and feed-forward.
-        Each sub-layer is followed by a residual connection and layer
-        normalisation.
-        '''
+        # sublayer 1: attention
 
-        x_copy = x
+        q = (x + pos_enc)
+        k = (x + pos_enc)
+        v = x
 
-        # sublayer 1
-        x = self.attention(q=x, k=x, v=x)
-        x = self.dropout1(x)
+        att_out, _ = self.attention(q, k, v)
+        att_out = x + att_out
 
-        x = self.norm1(x + x_copy)
+        att_out = self.norm1(att_out)
 
-        x_copy = x
+        # sublayer 2: feed-forward
 
-        # sublayer 2
-        x = self.ffn(x)
-        x = self.dropout2(x)
+        ff_out = self.linear1(att_out)
+        ff_out = F.relu(ff_out)
+        ff_out = self.dropout(ff_out)
+        ff_out = self.linear2(ff_out)
 
-        x = self.norm2(x + x_copy)
+        out = self.norm2(att_out + ff_out)
 
-        return x
+        return out

@@ -5,7 +5,7 @@ from model.layer.encoder_layer import EncoderLayer
 
 class Transformer_Encoder_Model(nn.Module):
 
-    def __init__(self, d_model, n_hidden=2048, n_head=8, n_layers=6, dropout_p=0.0):
+    def __init__(self, d_model, n_hidden, n_head, n_layers, dropout_p):
 
         super().__init__()
 
@@ -15,9 +15,9 @@ class Transformer_Encoder_Model(nn.Module):
                                                   dropout_p=dropout_p)
                                     for _ in range(n_layers)])
 
-    def forward(self, x):
+    def forward(self, x, pos_enc):
 
         for layer in self.layers:
-            x = layer(x)
+            x = layer(x, pos_enc)
 
         return x

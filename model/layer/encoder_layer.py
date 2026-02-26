@@ -20,6 +20,8 @@ class EncoderLayer(nn.Module):
 
         # sublayer 1: attention
 
+        x = self.norm1(x)
+
         q = (x + pos_enc)
         k = (x + pos_enc)
         v = x
@@ -27,15 +29,15 @@ class EncoderLayer(nn.Module):
         att_out, _ = self.attention(q, k, v)
         att_out = x + att_out
 
-        att_out = self.norm1(att_out)
-
         # sublayer 2: feed-forward
 
-        ff_out = self.linear1(att_out)
+        out = self.norm2(att_out)
+
+        ff_out = self.linear1(out)
         ff_out = F.relu(ff_out)
         ff_out = self.dropout(ff_out)
         ff_out = self.linear2(ff_out)
 
-        out = self.norm2(att_out + ff_out)
+        out = att_out + ff_out
 
         return out

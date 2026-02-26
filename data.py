@@ -6,7 +6,6 @@ import torch
 from torch.utils.data import Dataset
 import matplotlib.pyplot as plt
 import transforms
-from targets import Target
 
 MAX_RESONANCES = 10
 
@@ -52,48 +51,53 @@ def get_tensors(data_filename, log_cx=True, compressed=True):
 
     return tensors
 
-def get_single_res_targets(data_filename, compressed=True):
+# def get_single_res_targets(data_filename, compressed=True):
 
-    data = open_file(f'data/{data_filename}', compressed)
+#     data = open_file(f'data/{data_filename}', compressed)
 
-    n = len(data)
+#     n = len(data)
 
-    targets = []
+#     targets = []
     
-    for i in range(n):
+#     for i in range(n):
 
-        points = data[i]['observable_sets'][0]['points']
-        xs, ys = get_xs_ys(points)
+#         points = data[i]['observable_sets'][0]['points']
+#         xs, ys = get_xs_ys(points)
 
-        n_resonances = len(data[i]['levels'])
+#         n_resonances = len(data[i]['levels'])
 
-        target = torch.zeros(10, len(Target), dtype=torch.float32)
+#         target = torch.zeros(10, len(Target), dtype=torch.float32)
 
-        for n in range(n_resonances):
+#         for n in range(n_resonances):
 
-            level = data[i]['levels'][n]
+#             level = data[i]['levels'][n]
 
-            energy = level['energy']
-            energy = transforms._normalise(energy, min=min(ys), max=max(ys))
-            target[n, Target.ENERGY_LEVEL.value] = float(energy)
+#             energy = level['energy']
+#             energy = transforms._normalise(energy, min=min(ys), max=max(ys))
+#             target[n, Target.ENERGY_LEVEL.value] = float(energy)
 
-            gamma_total = level['Gamma_total']
-            gamma_total = float(np.log10(gamma_total))
-            target[n, Target.GAMMA_TOTAL.value] = float(gamma_total)
+#             gamma_total = level['Gamma_total']
+#             gamma_total = float(np.log10(gamma_total))
+#             target[n, Target.GAMMA_TOTAL.value] = float(gamma_total)
 
-        targets.append(target)
+#         targets.append(target)
 
-    return torch.stack(targets, dim=0)
+#     return torch.stack(targets, dim=0)
 
-# returns a mask targets tensor of shape [n, MAX_RESONANCES, 1]
-# and a regression targets tensor of shape [n, MAX_RESONANCES, 2]
-def get_multi_res_targets(data_filename, compressed=True):
-
+# returns a class targets tensor of shape [n, MAX_RESONANCES, n_class_targets]
+# and a regression targets tensor of shape [n, MAX_RESONANCES, n_reg_targets]
+def get_multi_res_targets(
+    data_filename,
+    n_class_targets=2,
+    n_reg_targets=2,
+    compressed=True
+):
+    
     data = open_file(f'data/{data_filename}', compressed)
 
     n = len(data)
 
-    mask_targets = []
+    class_targets = []
     reg_targets = []
     
     for i in range(n):
@@ -103,14 +107,12 @@ def get_multi_res_targets(data_filename, compressed=True):
 
         n_resonances = len(data[i]['levels'])
 
-        mask_target = torch.zeros([MAX_RESONANCES, 1], dtype=torch.float32)
-        reg_target = torch.zeros([MAX_RESONANCES, 2], dtype=torch.float32)
+        class_target = torch.zeros([MAX_RESONANCES, n_class_targets], dtype=torch.float32)
+        reg_target = torch.zeros([MAX_RESONANCES, n_reg_targets], dtype=torch.float32)
 
         for n in range(n_resonances):
 
             level = data[i]['levels'][n]
-
-            mask_target[n, 0] = 1.0
 
             energy = level['energy']
             energy = transforms._normalise(energy, min(ys), max(ys))
@@ -120,13 +122,23 @@ def get_multi_res_targets(data_filename, compressed=True):
             gamma_total = np.log10(gamma_total)
             reg_target[n, 1] = gamma_total
 
-        mask_targets.append(mask_target)
+        # fill class targets
+        # class 0: no resonance
+        # class 1: resonance
+        for n in range(MAX_RESONANCES):
+
+            if n < n_resonances:
+                class_target[n, 1] = 1.0
+            else:
+                class_target[n, 0] = 1.0
+
+        class_targets.append(class_target)
         reg_targets.append(reg_target)
 
-    mask_targets = torch.stack(mask_targets, dim=0)
+    class_targets = torch.stack(class_targets, dim=0)
     reg_targets = torch.stack(reg_targets, dim=0)
 
-    return mask_targets, reg_targets
+    return class_targets, reg_targets
 
 def open_file(path, compressed=True):
 
@@ -174,9 +186,9 @@ class ResonanceDataset(Dataset):
         self.multi_resonance = multi_resonance
 
         if self.multi_resonance:
-            self.targets = get_multi_res_targets(path, compressed)
+            self.targets = get_multi_res_targets(path, compressed=compressed)
         else:
-            self.targets = get_single_res_targets(path, compressed)
+            self.targets = get_single_res_targets(path, compressed=compressed)
 
         self.transform = transform
 
@@ -186,13 +198,10 @@ class ResonanceDataset(Dataset):
     def __getitem__(self, idx):
 
         tensor = self.tensors[idx]
-        
-        if self.multi_resonance:
-            target = (self.targets[0][idx], self.targets[1][idx])
-        else:
-            target = self.targets[idx]
-
         if self.transform:
             tensor = self.transform(tensor)
 
+        target = [self.targets[0][idx], self.targets[1][idx]]
+        
+        
         return tensor, target

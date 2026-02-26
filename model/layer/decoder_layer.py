@@ -22,29 +22,35 @@ class DecoderLayer(nn.Module):
 
         # sublayer 1: self-attention
 
+        x = self.norm1(x)
+
         q = (x + query_pos)
         k = (x + query_pos)
         v = x
 
         self_att_out, _ = self.self_attention(q, k, v)
-        x = self.norm1(x + self_att_out)
+        x = x + self_att_out
 
         # sublayer 2: cross-attention
+
+        x = self.norm2(x)
 
         q = (x + query_pos)
         k = (enc + pos_enc)
         v = enc
 
         cross_att_out, cross_att = self.cross_attention(q, k, v)
-        x = self.norm2(x + cross_att_out)
+        x = x + cross_att_out
 
         # sublayer 3: feed-forward
+
+        x = self.norm3(x)
 
         ff_out = self.linear1(x)
         ff_out = F.relu(ff_out)
         ff_out = self.dropout(ff_out)
         ff_out = self.linear2(ff_out)
 
-        x = self.norm3(x + ff_out)
+        x = x + ff_out
 
         return x, cross_att

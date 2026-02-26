@@ -19,19 +19,9 @@ class Transformer_Decoder_Model(nn.Module):
 
     def forward(self, x, enc, pos_enc, query_pos):
 
-        outputs = []
-        cross_att_weights = []
-
         for layer in self.layers:
 
             x, cross_att = layer(x, enc, pos_enc, query_pos)
-
             x = self.norm(x)
-            outputs.append(x)
 
-            cross_att_weights.append(cross_att)
-
-        output = torch.stack(outputs)
-        weights = torch.stack(cross_att_weights)
-
-        return output, weights
+        return x, cross_att

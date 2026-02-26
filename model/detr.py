@@ -15,12 +15,12 @@ class DETR_Model(nn.Module):
     def __init__(
         self,
         d_backbone=2048,
-        d_transformer=256,
-        n_hidden=2048,
-        n_head=8,
-        n_layers=6,
-        dropout_p=0.2,
-        n_queries=20,
+        d_transformer=128,
+        n_hidden=512,
+        n_head=4,
+        n_layers=3,
+        dropout_p=0.3,
+        n_queries=100,
         n_class_targets=2,
         n_reg_targets=2,
         max_len=5000
@@ -154,7 +154,7 @@ class DETR_Loss(nn.Module):
             if len(pred_idx) > 0:
                 target_classes[pred_idx] = 0
 
-            weight = torch.tensor([1.0, 0.1], device=preds['class'].device)
+            weight = torch.tensor([1.0, 0.3], device=preds['class'].device)
             loss_class += F.cross_entropy(preds['class'][n], target_classes, weight=weight)
 
             if len(pred_idx) > 0:
@@ -166,7 +166,13 @@ class DETR_Loss(nn.Module):
         loss_class /= n
         loss_reg /= n
 
-        return self.cost_class * loss_class + self.cost_reg * loss_reg
+        # return self.cost_class * loss_class + self.cost_reg * loss_reg
+
+        return {
+            'total': self.cost_class * loss_class + self.cost_reg * loss_reg,
+            'class': loss_class.item(),
+            'reg': loss_reg.item()
+        }
 
 class HungarianMatcher(nn.Module):
 

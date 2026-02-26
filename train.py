@@ -3,24 +3,22 @@ from torch import nn
 from torch.utils.data import DataLoader, random_split
 import data
 from config import Config
-from model.detr import DETR_Loss
 
-def run_batch(tensor, targets, model, device):
+def run_batch(tensor, targets, _target, model, device):
 
     tensor = tensor.to(device)
 
-    class_targets = targets[0].to(device)
-    reg_targets = targets[1].to(device)
-    targets = [class_targets, reg_targets]
-
     preds = model(tensor)
 
-    loss_fn = DETR_Loss()
+    targets = _target.get_targets(targets)
+    targets = targets.to(device)
+
+    loss_fn = _target.get_loss_fn()
     loss = loss_fn(preds, targets)
 
     return loss
 
-def train_epoch(model, loader, optimiser, device):
+def train_epoch(model, loader, _target, optimiser, device):
 
     model.train()
 
@@ -32,7 +30,7 @@ def train_epoch(model, loader, optimiser, device):
 
         optimiser.zero_grad()
 
-        loss = run_batch(tensor, targets, model, device)
+        loss = run_batch(tensor, targets, _target, model, device)
 
         loss.backward()
 
@@ -50,7 +48,7 @@ def train_epoch(model, loader, optimiser, device):
 
     return metrics
 
-def eval_epoch(model, loader, device):
+def eval_epoch(model, loader, _target, device):
 
     model.eval()
 
@@ -62,7 +60,7 @@ def eval_epoch(model, loader, device):
 
         for tensor, targets in loader:
 
-            loss = run_batch(tensor, targets, model, device)
+            loss = run_batch(tensor, targets, _target, model, device)
 
             running_stats['loss'] += loss.item() * tensor.size(0)
             running_stats['count'] += tensor.size(0)
@@ -90,6 +88,7 @@ def train(params, epoch_n_print=5):
     config = Config.from_key(params['config'])
     model = config.get_model()
     transform = config.get_transform()
+    target = config.get_target()
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f'Using device: {device}')
@@ -131,8 +130,8 @@ def train(params, epoch_n_print=5):
 
     for epoch in range(1, n_epochs + 1):
 
-        train_m = train_epoch(model, train_loader, optimiser, device)
-        val_m = eval_epoch(model, val_loader, device)
+        train_m = train_epoch(model, train_loader, target, optimiser, device)
+        val_m = eval_epoch(model, val_loader, target, device)
 
         scheduler.step(val_m['loss'])
 

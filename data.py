@@ -99,6 +99,7 @@ def get_multi_res_targets(
 
     class_targets = []
     reg_targets = []
+    n_res_targets = []
     
     for i in range(n):
 
@@ -134,11 +135,13 @@ def get_multi_res_targets(
 
         class_targets.append(class_target)
         reg_targets.append(reg_target)
+        n_res_targets.append(transforms._normalise(n_resonances, 0, 10))
 
     class_targets = torch.stack(class_targets, dim=0)
     reg_targets = torch.stack(reg_targets, dim=0)
+    n_res_targets = torch.tensor(n_res_targets, dtype=torch.float32)
 
-    return class_targets, reg_targets
+    return class_targets, reg_targets, n_res_targets
 
 def open_file(path, compressed=True):
 
@@ -201,7 +204,8 @@ class ResonanceDataset(Dataset):
         if self.transform:
             tensor = self.transform(tensor)
 
-        target = [self.targets[0][idx], self.targets[1][idx]]
-        
+        target = []
+        for i in range(len(self.targets)):
+            target.append(self.targets[i][idx])
         
         return tensor, target

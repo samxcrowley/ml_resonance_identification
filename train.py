@@ -78,7 +78,7 @@ def eval_epoch(model, loader, _target, device):
 
     return metrics
 
-def train(params, epoch_n_print=5):
+def train(params):
 
     seed = params['seed']
     data_filename = params['data_filename']
@@ -87,7 +87,8 @@ def train(params, epoch_n_print=5):
     n_epochs = params['n_epochs']
     lr = params['lr']
     weight_decay = params['weight_decay']
-
+    epoch_n_print = params['epoch_n_print']
+    
     config = Config.from_key(params['config'])
     model = config.get_model()
     transform = config.get_transform()

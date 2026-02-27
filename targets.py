@@ -15,9 +15,11 @@ class Target(Enum):
 
         if self == Target.ENERGY:
             return targets['energy'][:, 0, :]
-        elif self == Target.N_RES:
+        
+        if self == Target.N_RES:
             return targets['n_res'].unsqueeze(1)
-        elif self == Target.DETR:
+        
+        if self == Target.DETR or self == Target.DETR_NO_GAMMA_TOTAL:
             return targets
 
     def get_loss_fn(self):

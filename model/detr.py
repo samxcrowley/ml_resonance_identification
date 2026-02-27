@@ -16,10 +16,10 @@ class DETR_Model(nn.Module):
     def __init__(
         self,
         d_backbone=2048,
-        d_transformer=128,
-        n_hidden=512,
-        n_head=4,
-        n_layers=3,
+        d_transformer=512,
+        n_hidden=2048,
+        n_head=8,
+        n_layers=6,
         dropout_p=0.3,
         n_queries=data.MAX_RESONANCES,
         n_class_targets=2,
@@ -33,8 +33,8 @@ class DETR_Model(nn.Module):
             d_transformer=d_transformer
         )
         # freeze backbone (is pre-trained)
-        for param in self.backbone.parameters():
-            param.requires_grad = False
+        # for param in self.backbone.parameters():
+        #     param.requires_grad = False
 
         self.encoder = transformer_encoder.Transformer_Encoder_Model(
             d_model=d_transformer,
@@ -139,7 +139,7 @@ class DETR_Loss(nn.Module):
             mask = class_targets[n, :, 1] == 1
 
             _targets.append({
-                'class': torch.zeros(mask.sum().item(), dtype=torch.long),
+                'class': torch.ones(mask.sum().item(), dtype=torch.long),
                 'energy': energy_targets[n][mask],
                 'gamma_total': gamma_total_targets[n][mask]
             })
@@ -151,7 +151,7 @@ class DETR_Loss(nn.Module):
         targets = self.prepare_targets(targets)
 
         indices = self.matcher(preds, targets)
-
+        
         N, n_queries = preds['class'].shape[:2]
 
         loss_class = 0.0
@@ -165,14 +165,14 @@ class DETR_Loss(nn.Module):
 
             target_classes = torch.full(
                 (n_queries,),
-                1,
+                0,
                 dtype=torch.long,
                 device=device
             )
             if len(pred_idx) > 0:
-                target_classes[pred_idx] = 0
+                target_classes[pred_idx] = 1
 
-            weight = torch.tensor([1.0, 0.3], device=device)
+            weight = torch.tensor([1.0, 0.1], device=device)
             loss_class += F.cross_entropy(preds['class'][n], target_classes, weight=weight)
 
             if len(pred_idx) > 0:
@@ -197,11 +197,20 @@ class DETR_Loss(nn.Module):
             loss_gamma_total /= N
             total += self.cost_gamma_total * loss_gamma_total
 
-        return total
+        loss = {
+            'total': total,
+            'class': loss_class.item(),
+            'energy': loss_energy.item(),
+        }
+
+        if self.include_gamma_total:
+            loss['gamma_total'] = loss_gamma_total.item()
+
+        return loss
 
 class HungarianMatcher(nn.Module):
 
-    def __init__(self, cost_class, cost_energy, cost_gamma_total, include_gamma_total):
+    def __init__(self, cost_class=1.0, cost_energy=1.0, cost_gamma_total=1.0, include_gamma_total=False):
 
         super().__init__()
 
@@ -235,22 +244,31 @@ class HungarianMatcher(nn.Module):
             # class
             pred_class = preds['class'][n]
             target_class = target_class.to(pred_class.device)
-            cost_class = -pred_class.softmax(-1)[:, 0]
-            cost_class = cost_class.unsqueeze(1)
-            cost_class = cost_class.expand(-1, n_objects)
+
+            pred_prob = pred_class.softmax(-1)[:, 1]
+
+            alpha, gamma = 0.25, 2.0
+            focal_cost = -(alpha * (1 - pred_prob) ** gamma * pred_prob.log())
+            cost_class = focal_cost.unsqueeze(1).expand(-1, n_objects)
+
             cost += self.cost_class * cost_class
 
             # energy
             pred_energy = preds['energy'][n]
             target_energy = target_energy.to(pred_energy.device)
+
             cost_energy = torch.cdist(pred_energy, target_energy, p=1)
+
             cost += self.cost_energy * cost_energy
 
             # gamma_total
             if self.include_gamma_total:
+
                 pred_gamma_total = preds['gamma_total'][n]
                 target_gamma_total = target_gamma_total.to(pred_gamma_total.device)
+
                 cost_gamma_total = torch.cdist(pred_gamma_total, target_gamma_total, p=1)
+
                 cost += self.cost_gamma_total * cost_gamma_total
 
             # Hungarian algorithm

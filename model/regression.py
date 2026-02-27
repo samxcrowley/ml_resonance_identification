@@ -12,11 +12,11 @@ class Regression_Model(nn.Module):
         # )
         # fc_in = self.model.fc.in_features
         # fc_out = out_size
-        # self.model.fc = nn.Linear(fc_in, fc_out)
+        # self.model.fc = nn.Linear(fc_in, 1)
 
         self.model = torchvision.models.efficientnet_b0(weights='DEFAULT')
         fc_in = self.model.classifier[-1].in_features
-        self.model.classifier[-1] = nn.Linear(fc_in, out_size)
+        self.model.classifier[-1] = nn.Linear(fc_in, 1)
 
     def forward(self, x):
         return self.model(x)

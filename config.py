@@ -1,6 +1,6 @@
 from enum import Enum
 from model.detr import DETR_Model
-from model.resnet import Regression_Model
+from model.regression import Regression_Model
 from model.transformer_encoder import Transformer_Encoder_Model
 import model.models as models
 import model

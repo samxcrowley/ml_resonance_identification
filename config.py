@@ -1,6 +1,6 @@
 from enum import Enum
 from model.detr import DETR_Model
-from model.resnet import RESNET34_Reg_Model
+from model.resnet import Regression_Model
 from model.transformer_encoder import Transformer_Encoder_Model
 import model.models as models
 import model
@@ -18,14 +18,14 @@ class Config(Enum):
 
     ENERGY = (
         'energy',
-        RESNET34_Reg_Model,
+        Regression_Model,
         transforms._resnet34_transform(sobel=True),
         Target.ENERGY
     )
 
     N_RES = (
         'n_res',
-        RESNET34_Reg_Model,
+        Regression_Model,
         transforms._resnet34_transform(sobel=True),
         Target.N_RES
     )

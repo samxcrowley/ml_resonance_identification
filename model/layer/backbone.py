@@ -9,6 +9,7 @@ class Backbone(nn.Module):
         super().__init__()
 
         self.resnet = torchvision.models.resnet101(
+            weights='DEFAULT',
             norm_layer=torchvision.ops.FrozenBatchNorm2d
         )
 

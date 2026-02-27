@@ -13,9 +13,6 @@ def run_batch(tensor, targets, _target, model, device):
     targets = _target.get_targets(targets)
     targets = targets.to(device)
 
-    # print(preds[:20])
-    # print(targets[:20])
-
     loss_fn = _target.get_loss_fn()
     loss = loss_fn(preds, targets)
 

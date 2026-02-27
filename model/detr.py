@@ -9,6 +9,7 @@ from model import transformer_decoder
 from model.layer import backbone
 from model.layer import positional_encoding
 from scipy.optimize import linear_sum_assignment
+import data
 
 class DETR_Model(nn.Module):
 
@@ -20,9 +21,8 @@ class DETR_Model(nn.Module):
         n_head=4,
         n_layers=3,
         dropout_p=0.3,
-        n_queries=100,
+        n_queries=data.MAX_RESONANCES,
         n_class_targets=2,
-        n_reg_targets=2,
         max_len=5000
     ):
 
@@ -32,6 +32,7 @@ class DETR_Model(nn.Module):
             d_backbone=d_backbone,
             d_transformer=d_transformer
         )
+        # freeze backbone (is pre-trained)
         for param in self.backbone.parameters():
             param.requires_grad = False
 
@@ -66,12 +67,21 @@ class DETR_Model(nn.Module):
             n_class_targets
         )
 
-        self.reg_head = nn.Sequential(
+        self.energy_head = nn.Sequential(
             nn.Linear(d_transformer, d_transformer),
             nn.ReLU(),
             nn.Linear(d_transformer, d_transformer),
             nn.ReLU(),
-            nn.Linear(d_transformer, n_reg_targets),
+            nn.Linear(d_transformer, 1),
+            nn.Sigmoid() # energy in [0, 1]
+        )
+
+        self.gamma_total_head = nn.Sequential(
+            nn.Linear(d_transformer, d_transformer),
+            nn.ReLU(),
+            nn.Linear(d_transformer, d_transformer),
+            nn.ReLU(),
+            nn.Linear(d_transformer, 1)
         )
 
     def forward(self, x):
@@ -90,54 +100,63 @@ class DETR_Model(nn.Module):
 
         out, _ = self.decoder(x, enc, pos_enc, query_pos)
 
-        pred_class = self.class_head(out)
-
-        pred_reg = self.reg_head(out).sigmoid()
-
         preds = {
-            'class': pred_class,
-            'reg': pred_reg
+            'class': self.class_head(out),
+            'energy': self.energy_head(out),
+            'gamma_total': self.gamma_total_head(out)
         }
 
         return preds
 
 class DETR_Loss(nn.Module):
 
-    def __init__(self, cost_class=1.0, cost_reg=1.0):
+    def __init__(self, cost_class=1.0, cost_energy=1.0, cost_gamma_total=0.5, include_gamma_total=True):
 
         super().__init__()
 
         self.cost_class = cost_class
-        self.cost_reg = cost_reg
+        self.cost_energy = cost_energy
+        self.cost_gamma_total = cost_gamma_total
+        self.include_gamma_total = include_gamma_total
 
-        self.matcher = HungarianMatcher(cost_class, cost_reg)
+        self.matcher = HungarianMatcher(
+            cost_class,
+            cost_energy,
+            cost_gamma_total,
+            include_gamma_total=include_gamma_total
+        )
 
-    def prepare_targets(self, class_targets, reg_targets):
+    def prepare_targets(self, targets):
 
-        targets = []
+        class_targets = targets['class']
+        energy_targets = targets['energy']
+        gamma_total_targets = targets['gamma_total']
+
+        _targets = []
 
         for n in range(class_targets.shape[0]):
 
             mask = class_targets[n, :, 1] == 1
 
-            n_objects = mask.sum().item()
-            _class = torch.zeros(n_objects, dtype=torch.long)
-            reg = reg_targets[n][mask]
+            _targets.append({
+                'class': torch.zeros(mask.sum().item(), dtype=torch.long),
+                'energy': energy_targets[n][mask],
+                'gamma_total': gamma_total_targets[n][mask]
+            })
 
-            targets.append((_class, reg))
-
-        return targets
+        return _targets
 
     def forward(self, preds, targets):
 
-        targets = self.prepare_targets(targets[0], targets[1])
+        targets = self.prepare_targets(targets)
 
         indices = self.matcher(preds, targets)
 
         N, n_queries = preds['class'].shape[:2]
 
-        loss_class = 0
-        loss_reg = 0
+        loss_class = 0.0
+        loss_energy = 0.0
+        loss_gamma_total = 0.0
 
         for n in range(N):
 
@@ -150,38 +169,46 @@ class DETR_Loss(nn.Module):
                 dtype=torch.long,
                 device=device
             )
-
             if len(pred_idx) > 0:
                 target_classes[pred_idx] = 0
 
-            weight = torch.tensor([1.0, 0.3], device=preds['class'].device)
+            weight = torch.tensor([1.0, 0.3], device=device)
             loss_class += F.cross_entropy(preds['class'][n], target_classes, weight=weight)
 
             if len(pred_idx) > 0:
-                matched_pred_reg = preds['reg'][n][pred_idx]
-                matched_target_reg = targets[n][1][target_idx].float().to(device)
-                loss_reg += F.l1_loss(matched_pred_reg, matched_target_reg)
+
+                loss_energy += F.l1_loss(
+                    preds['energy'][n][pred_idx],
+                    targets[n]['energy'][target_idx].float().to(device)
+                )
+
+                if self.include_gamma_total:
+                    loss_gamma_total += F.l1_loss(
+                        preds['gamma_total'][n][pred_idx],
+                        targets[n]['gamma_total'][target_idx].float().to(device)
+                    )
             
+        loss_class /= N
+        loss_energy /= N
 
-        loss_class /= n
-        loss_reg /= n
+        total = self.cost_class * loss_class + self.cost_energy * loss_energy
 
-        # return self.cost_class * loss_class + self.cost_reg * loss_reg
+        if self.include_gamma_total:
+            loss_gamma_total /= N
+            total += self.cost_gamma_total * loss_gamma_total
 
-        return {
-            'total': self.cost_class * loss_class + self.cost_reg * loss_reg,
-            'class': loss_class.item(),
-            'reg': loss_reg.item()
-        }
+        return total
 
 class HungarianMatcher(nn.Module):
 
-    def __init__(self, cost_class=1.0, cost_reg=1.0):
+    def __init__(self, cost_class, cost_energy, cost_gamma_total, include_gamma_total):
 
         super().__init__()
 
         self.cost_class = cost_class
-        self.cost_reg = cost_reg
+        self.cost_energy = cost_energy
+        self.cost_gamma_total = cost_gamma_total
+        self.include_gamma_total = include_gamma_total
 
     @torch.no_grad()
     def forward(self, preds, targets):
@@ -190,36 +217,44 @@ class HungarianMatcher(nn.Module):
 
         for n in range(len(targets)):
 
-            target_class, target_reg = targets[n]
+            target_class = targets[n]['class']
+            target_energy = targets[n]['energy']
+            target_gamma_total = targets[n]['gamma_total']
+
             n_objects = target_class.size(0)
 
             if n_objects == 0:
-                indicies.append((
+                indices.append((
                     torch.tensor([], dtype=torch.long),
                     torch.tensor([], dtype=torch.long)
                 ))
                 continue
 
+            cost = 0.0
+
+            # class
             pred_class = preds['class'][n]
-            pred_reg = preds['reg'][n]
-
             target_class = target_class.to(pred_class.device)
-            target_reg = target_reg.to(pred_reg.device)
-
-            # cross-entropy between each query and target
-            # [n_queries, n_objects]
             cost_class = -pred_class.softmax(-1)[:, 0]
             cost_class = cost_class.unsqueeze(1)
             cost_class = cost_class.expand(-1, n_objects)
+            cost += self.cost_class * cost_class
 
-            # L1 loss between each query and target
-            # [n_queries, n_objects]
-            cost_reg = torch.cdist(pred_reg, target_reg, p=1)
+            # energy
+            pred_energy = preds['energy'][n]
+            target_energy = target_energy.to(pred_energy.device)
+            cost_energy = torch.cdist(pred_energy, target_energy, p=1)
+            cost += self.cost_energy * cost_energy
 
-            cost = self.cost_class * cost_class * self.cost_reg * cost_reg
-            cost = cost.cpu().numpy()
+            # gamma_total
+            if self.include_gamma_total:
+                pred_gamma_total = preds['gamma_total'][n]
+                target_gamma_total = target_gamma_total.to(pred_gamma_total.device)
+                cost_gamma_total = torch.cdist(pred_gamma_total, target_gamma_total, p=1)
+                cost += self.cost_gamma_total * cost_gamma_total
 
             # Hungarian algorithm
+            cost = cost.cpu().numpy()
             pred_idx, target_idx = linear_sum_assignment(cost)
 
             indices.append((

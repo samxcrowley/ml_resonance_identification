@@ -82,7 +82,6 @@ def train(params, epoch_n_print=5):
 
     seed = params['seed']
     data_filename = params['data_filename']
-    is_data_compressed = params['is_data_compressed']
     num_workers = params['num_workers']
     batch_size = params['batch_size']
     n_epochs = params['n_epochs']
@@ -97,7 +96,7 @@ def train(params, epoch_n_print=5):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f'Using device: {device}')
 
-    dataset = data.ResonanceDataset(data_filename, transform=transform, compressed=is_data_compressed)
+    dataset = data.ResonanceDataset(data_filename, transform=transform)
 
     train_size = int(0.8 * len(dataset))
     val_size = len(dataset) - train_size

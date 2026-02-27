@@ -16,9 +16,9 @@ z_key = 'dsdO'
 
 # output sequence shape:
 # [n, E, A]
-def get_tensors(data_filename, compressed=True):
+def get_tensors(data_filename):
 
-    data = open_file(f'data/{data_filename}', compressed)
+    data = open_file(f'data/{data_filename}')
 
     n = len(data)
 
@@ -48,14 +48,9 @@ def get_tensors(data_filename, compressed=True):
 
     return tensors
 
-def get_targets(
-    data_filename,
-    n_class_targets=2,
-    n_reg_targets=2,
-    compressed=True
-):
+def get_targets(data_filename, n_class_targets=2, n_reg_targets=2):
     
-    data = open_file(f'data/{data_filename}', compressed)
+    data = open_file(f'data/{data_filename}')
 
     n = len(data)
 
@@ -117,16 +112,19 @@ def get_targets(
         'n_res': n_res_targets
     }
 
-def open_file(path, compressed=True):
+def open_file(path):
 
-    if compressed:
+    if path.endswith('gz'):
         with gzip.open(path, 'rb') as f:
             json_bytes = f.read()
             json_str = json_bytes.decode()
             data = json.loads(json_str)
-    else:
+    elif path.endswith('json'):
         with open(path, 'r') as f:
             data = json.load(f)
+    else:
+        print('Invalid data file type.')
+        return None
 
     return data
 
@@ -157,10 +155,10 @@ def display_image(img, name):
 
 class ResonanceDataset(Dataset):
 
-    def __init__(self, path, transform=None, compressed=True):
+    def __init__(self, path, transform=None):
 
-        self.tensors = get_tensors(path, compressed=compressed)
-        self.targets = get_targets(path, compressed=compressed)
+        self.tensors = get_tensors(path)
+        self.targets = get_targets(path)
         self.transform = transform
 
     def __len__(self):

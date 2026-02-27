@@ -11,7 +11,6 @@ class Regression_Model(nn.Module):
         #     weights='DEFAULT'
         # )
         # fc_in = self.model.fc.in_features
-        # fc_out = out_size
         # self.model.fc = nn.Linear(fc_in, 1)
 
         self.model = torchvision.models.efficientnet_b0(weights='DEFAULT')

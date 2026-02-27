@@ -19,7 +19,7 @@ class Config(Enum):
     DETR_NO_GAMMA_TOTAL = (
         'detr_no_gamma_total',
         DETR_Model,
-        transforms._resnet34_transform(),
+        transforms._resnet34_transform(sobel=True),
         Target.DETR_NO_GAMMA_TOTAL
     )
 

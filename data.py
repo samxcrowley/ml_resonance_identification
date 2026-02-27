@@ -18,7 +18,7 @@ z_key = 'dsdO'
 # [n, E, A]
 def get_tensors(data_filename):
 
-    data = open_file(f'data/{data_filename}')
+    data = open_data_file(f'data/{data_filename}')
 
     n = len(data)
 
@@ -50,7 +50,7 @@ def get_tensors(data_filename):
 
 def get_targets(data_filename, n_class_targets=2, n_reg_targets=2):
     
-    data = open_file(f'data/{data_filename}')
+    data = open_data_file(f'data/{data_filename}')
 
     n = len(data)
 
@@ -112,7 +112,7 @@ def get_targets(data_filename, n_class_targets=2, n_reg_targets=2):
         'n_res': n_res_targets
     }
 
-def open_file(path):
+def open_data_file(path):
 
     if path.endswith('gz'):
         with gzip.open(path, 'rb') as f:

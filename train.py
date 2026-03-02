@@ -162,10 +162,12 @@ def train(params):
         'train_class_loss': [],
         'train_energy_loss': [],
         'val_class_loss': [],
-        'val_energy_loss': [],
-        'val_precision': [],
-        'val_recall': []
+        'val_energy_loss': []
     }
+
+    if do_evaluate:
+        results['val_precision'] = []
+        results['val_recall'] = []
 
     for epoch in range(1, n_epochs + 1):
 
@@ -189,9 +191,7 @@ def train(params):
             print(
                 f'Epoch {epoch} '
                 f'| Train loss {train_m["total_loss"]:.4f} '
-                f'| Val loss {val_m["total_loss"]:.4f} '
-                f'| Precision {precision:.4f} '
-                f'| Recall {recall:.4f}'
+                f'| Val loss {val_m["total_loss"]:.4f}'
             )
 
         # evaluate model statistics

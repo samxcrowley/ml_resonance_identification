@@ -24,9 +24,12 @@ def run_batch(tensor, targets, _target, model, device):
 
     return loss
 
-def train_epoch(model, loader, _target, optimiser, device):
+def run_epoch(model, loader, _target, is_eval, optimiser, device):
 
-    model.train()
+    if is_eval:
+        model.eval()
+    else:
+        model.train()
 
     n = 0.0
     stats = {}
@@ -35,47 +38,24 @@ def train_epoch(model, loader, _target, optimiser, device):
 
     for tensor, targets in loader:
 
-        optimiser.zero_grad()
-
         loss = run_batch(tensor, targets, _target, model, device)
 
-        loss['total_loss'].backward()
+        if not is_eval:
+            optimiser.zero_grad()
+            loss['total_loss'].backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimiser.step()
 
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        if is_eval:
+            with torch.no_grad():
+                for stat in loss.keys():
+                    stats[stat] += loss[stat] * tensor.size(0)
 
-        optimiser.step()
+        else:
+            for stat in loss.keys():
+                stats[stat] += loss[stat] * tensor.size(0)
         
-        with torch.no_grad():
-
-            for stat in loss.keys():
-                stats[stat] += loss[stat] * tensor.size(0)
-
-            n += tensor.size(0)
-
-    for stat in stats.keys():
-        stats[stat] = stats[stat] / n
-
-    return stats
-
-def eval_epoch(model, loader, _target, device):
-
-    model.eval()
-
-    n = 0.0
-    stats = {}
-    for stat in train_stats:
-        stats[stat] = 0.0
-
-    with torch.no_grad():
-
-        for tensor, targets in loader:
-
-            loss = run_batch(tensor, targets, _target, model, device)
-
-            for stat in loss.keys():
-                stats[stat] += loss[stat] * tensor.size(0)
-
-            n += tensor.size(0)
+        n += tensor.size(0)
 
     for stat in stats.keys():
         stats[stat] = stats[stat] / n
@@ -150,10 +130,11 @@ def train(params):
         results['val_recall'] = []
 
     print('Starting training...\n')
+
     for epoch in range(1, n_epochs + 1):
 
-        train_m = train_epoch(model, train_loader, target, optimiser, device)
-        val_m = eval_epoch(model, val_loader, target, device)
+        train_m = run_epoch(model, train_loader, target, False, optimiser, device)
+        val_m = run_epoch(model, val_loader, target, True, optimiser, device)
 
         scheduler.step(val_m['total_loss'])
 

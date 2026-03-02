@@ -6,16 +6,18 @@ from config import Config
 import pandas as pd
 from model.detr import DETR_Model
 
+train_stats = ['total_loss', 'class_loss', 'energy_loss', 'gamma_total_loss']
+
 def run_batch(tensor, targets, _target, model, device):
 
-    tensor = tensor.to(device)
+    tensor = tensor.to(device, non_blocking=True)
 
     preds = model(tensor)
 
     targets = _target.get_targets(targets)
     
     if type(targets) is not dict:
-        targets = targets.to(device)
+        targets = targets.to(device, non_blocking=True)
 
     loss_fn = _target.get_loss_fn()
     loss = loss_fn(preds, targets)
@@ -26,12 +28,10 @@ def train_epoch(model, loader, _target, optimiser, device):
 
     model.train()
 
-    running_stats = {
-        'total_loss': 0.0,
-        'class_loss': 0.0,
-        'energy_loss': 0.0,
-        'count': 0.0
-    }
+    n = 0.0
+    stats = {}
+    for stat in train_stats:
+        stats[stat] = 0.0
 
     for tensor, targets in loader:
 
@@ -39,10 +39,7 @@ def train_epoch(model, loader, _target, optimiser, device):
 
         loss = run_batch(tensor, targets, _target, model, device)
 
-        if type(loss) is dict:
-            loss['total'].backward()
-        else:
-            loss.backward()
+        loss['total_loss'].backward()
 
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 
@@ -50,36 +47,24 @@ def train_epoch(model, loader, _target, optimiser, device):
         
         with torch.no_grad():
 
-            if type(loss) is dict:
-                running_stats['total_loss'] += loss['total'] * tensor.size(0)
-                running_stats['class_loss'] += loss['class'] * tensor.size(0)
-                running_stats['energy_loss'] += loss['energy'] * tensor.size(0)
+            for stat in loss.keys():
+                stats[stat] += loss[stat] * tensor.size(0)
 
-            else:
-                running_stats['total_loss'] += loss * tensor.size(0)
+            n += tensor.size(0)
 
-            running_stats['count'] += tensor.size(0)
+    for stat in stats.keys():
+        stats[stat] = stats[stat] / n
 
-    n = running_stats['count']
-
-    metrics = {
-        'total_loss': running_stats['total_loss'] / n,
-        'class_loss': running_stats['class_loss'] / n,
-        'energy_loss': running_stats['energy_loss'] / n
-    }
-
-    return metrics
+    return stats
 
 def eval_epoch(model, loader, _target, device):
 
     model.eval()
 
-    running_stats = {
-        'total_loss': 0.0,
-        'class_loss': 0.0,
-        'energy_loss': 0.0,
-        'count': 0.0
-    }
+    n = 0.0
+    stats = {}
+    for stat in train_stats:
+        stats[stat] = 0.0
 
     with torch.no_grad():
 
@@ -87,25 +72,15 @@ def eval_epoch(model, loader, _target, device):
 
             loss = run_batch(tensor, targets, _target, model, device)
 
-            if type(loss) is dict:
-                running_stats['total_loss'] += loss['total'] * tensor.size(0)
-                running_stats['class_loss'] += loss['class'] * tensor.size(0)
-                running_stats['energy_loss'] += loss['energy'] * tensor.size(0)
+            for stat in loss.keys():
+                stats[stat] += loss[stat] * tensor.size(0)
 
-            else:
-                running_stats['total_loss'] += loss * tensor.size(0)
+            n += tensor.size(0)
 
-            running_stats['count'] += tensor.size(0)
+    for stat in stats.keys():
+        stats[stat] = stats[stat] / n
 
-    n = running_stats['count']
-
-    metrics = {
-        'total_loss': running_stats['total_loss'] / n,
-        'class_loss': running_stats['class_loss'] / n,
-        'energy_loss': running_stats['energy_loss'] / n
-    }
-
-    return metrics
+    return stats
 
 def train(params):
 
@@ -125,7 +100,7 @@ def train(params):
     target = config.get_target()
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f'Using device: {device}')
+    print(f'Using device: {device}\n')
 
     dataset = data.ResonanceDataset(data_filename, transform=transform)
 
@@ -136,18 +111,25 @@ def train(params):
                                      [train_size, val_size], \
                                         generator=torch.Generator().manual_seed(seed))
 
+    print('Data loaded.')
     print(f'Training size: {len(train_dataset)}')
-    print(f'Validation size: {len(val_dataset)}')
+    print(f'Validation size: {len(val_dataset)}\n')
     
     train_loader = DataLoader(train_dataset,
                               batch_size=batch_size,
                               shuffle=True,
-                              num_workers=num_workers)
+                              num_workers=num_workers,
+                              pin_memory=True,
+                              persistent_workers=True,
+                              prefetch_factor=4)
     
     val_loader = DataLoader(val_dataset,
                             batch_size=batch_size,
                             shuffle=False,
-                            num_workers=num_workers)
+                            num_workers=num_workers,
+                            pin_memory=True,
+                            persistent_workers=True,
+                            prefetch_factor=4)
 
     model.to(device)
 
@@ -156,19 +138,18 @@ def train(params):
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimiser, mode='min', factor=0.5, patience=5)
 
     results = {
-        'epoch': [],
-        'train_loss': [],
-        'val_loss': [],
-        'train_class_loss': [],
-        'train_energy_loss': [],
-        'val_class_loss': [],
-        'val_energy_loss': []
+        'epoch': []
     }
+
+    for l in train_stats:
+        results[f'train_{l}'] = []
+        results[f'val_{l}'] = []
 
     if do_evaluate:
         results['val_precision'] = []
         results['val_recall'] = []
 
+    print('Starting training...\n')
     for epoch in range(1, n_epochs + 1):
 
         train_m = train_epoch(model, train_loader, target, optimiser, device)
@@ -177,14 +158,10 @@ def train(params):
         scheduler.step(val_m['total_loss'])
 
         results['epoch'].append(epoch)
-        results['train_loss'].append(train_m['total_loss'])
-        results['val_loss'].append(val_m['total_loss'])
 
-        results['train_class_loss'].append(train_m['class_loss'])
-        results['val_class_loss'].append(val_m['class_loss'])
-
-        results['train_energy_loss'].append(train_m['energy_loss'])
-        results['val_energy_loss'].append(val_m['energy_loss'])
+        for stat in train_stats:
+            results[f'train_{stat}'].append(train_m[stat])
+            results[f'val_{stat}'].append(val_m[stat])
 
         if epoch % epoch_n_print == 0:
 

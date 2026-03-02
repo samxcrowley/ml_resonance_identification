@@ -20,11 +20,11 @@ class DETR_Model(nn.Module):
         n_hidden=2048,
         n_head=8,
         n_layers=6,
-        dropout_p=0.3,
+        dropout_p=0.1,
         n_queries=data.MAX_RESONANCES,
         n_class_targets=2,
-        max_len=5000
-    ):
+        max_len=5000,
+        freeze_backbone=False):
 
         super().__init__()
 
@@ -32,9 +32,10 @@ class DETR_Model(nn.Module):
             d_backbone=d_backbone,
             d_transformer=d_transformer
         )
-        # freeze backbone (is pre-trained)
-        # for param in self.backbone.parameters():
-        #     param.requires_grad = False
+
+        if freeze_backbone:
+            for param in self.backbone.parameters():
+                param.requires_grad = False
 
         self.encoder = transformer_encoder.Transformer_Encoder_Model(
             d_model=d_transformer,
@@ -107,6 +108,67 @@ class DETR_Model(nn.Module):
         }
 
         return preds
+
+    def get_optimiser(self, lr, weight_decay):
+
+        optimiser = torch.optim.AdamW([
+            {'params': self.backbone.parameters(), 'lr': 1e-6},
+            {'params': [p for n, p in self.named_parameters() if 'backbone' not in n], 'lr': 1e-4}
+        ], weight_decay=weight_decay)
+
+        return optimiser
+
+    def evaluate(model, loader, device, energy_tolerance=0.1):
+
+        model.eval()
+
+        total_true = 0
+        total_detected = 0
+        total_false_positive = 0
+
+        loss_fn = DETR_Loss()
+        matcher = HungarianMatcher()
+
+        with torch.no_grad():
+
+            for tensor, targets in loader:
+
+                tensor = tensor.to(device)
+                preds = model(tensor)
+
+                targets = loss_fn.prepare_targets(targets)
+
+                indices = matcher(preds, targets)
+
+                for n in range(len(targets)):
+
+                    pred_idx, target_idx = indices[n]
+
+                    n_objects = len(targets[n]['energy'])
+
+                    total_true += n_objects
+
+                    if len(pred_idx) == 0:
+                        continue
+
+                    pred_energy = preds['energy'][n][pred_idx].squeeze()
+                    target_energy = targets[n]['energy'][target_idx].squeeze().to(device)
+
+                    difference = pred_energy - target_energy
+
+                    # true positives
+                    close = (difference).abs() < energy_tolerance
+                    total_detected += close.sum().item()
+
+                    # false positives
+                    confident = preds['class'][n].softmax(-1)[:, 0] > 0.5
+                    n_confident = confident.sum().item()
+                    total_false_positive += max(0, n_confident - close.sum().item())
+
+        recall = total_detected / total_true if total_true > 0 else 0
+        precision = total_detected / (total_detected + total_false_positive) if (total_detected + total_false_positive) > 0 else 0
+
+        return {'recall': recall, 'precision': precision}
 
 class DETR_Loss(nn.Module):
 

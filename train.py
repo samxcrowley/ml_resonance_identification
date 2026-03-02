@@ -3,6 +3,8 @@ from torch import nn
 from torch.utils.data import DataLoader, random_split
 import data
 from config import Config
+import pandas as pd
+from model.detr import DETR_Model
 
 def run_batch(tensor, targets, _target, model, device):
 
@@ -11,7 +13,9 @@ def run_batch(tensor, targets, _target, model, device):
     preds = model(tensor)
 
     targets = _target.get_targets(targets)
-    targets = targets.to(device)
+    
+    if type(targets) is not dict:
+        targets = targets.to(device)
 
     loss_fn = _target.get_loss_fn()
     loss = loss_fn(preds, targets)
@@ -23,7 +27,10 @@ def train_epoch(model, loader, _target, optimiser, device):
     model.train()
 
     running_stats = {
-        'loss': 0.0, 'count': 0.0
+        'total_loss': 0.0,
+        'class_loss': 0.0,
+        'energy_loss': 0.0,
+        'count': 0.0
     }
 
     for tensor, targets in loader:
@@ -32,20 +39,33 @@ def train_epoch(model, loader, _target, optimiser, device):
 
         loss = run_batch(tensor, targets, _target, model, device)
 
-        loss.backward()
+        if type(loss) is dict:
+            loss['total'].backward()
+        else:
+            loss.backward()
 
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 
         optimiser.step()
-
+        
         with torch.no_grad():
-            running_stats['loss'] += loss.item() * tensor.size(0)
+
+            if type(loss) is dict:
+                running_stats['total_loss'] += loss['total'] * tensor.size(0)
+                running_stats['class_loss'] += loss['class'] * tensor.size(0)
+                running_stats['energy_loss'] += loss['energy'] * tensor.size(0)
+
+            else:
+                running_stats['total_loss'] += loss * tensor.size(0)
+
             running_stats['count'] += tensor.size(0)
 
     n = running_stats['count']
 
     metrics = {
-        'loss': running_stats['loss'] / n
+        'total_loss': running_stats['total_loss'] / n,
+        'class_loss': running_stats['class_loss'] / n,
+        'energy_loss': running_stats['energy_loss'] / n
     }
 
     return metrics
@@ -55,7 +75,10 @@ def eval_epoch(model, loader, _target, device):
     model.eval()
 
     running_stats = {
-        'loss': 0.0, 'count': 0.0
+        'total_loss': 0.0,
+        'class_loss': 0.0,
+        'energy_loss': 0.0,
+        'count': 0.0
     }
 
     with torch.no_grad():
@@ -64,13 +87,22 @@ def eval_epoch(model, loader, _target, device):
 
             loss = run_batch(tensor, targets, _target, model, device)
 
-            running_stats['loss'] += loss.item() * tensor.size(0)
+            if type(loss) is dict:
+                running_stats['total_loss'] += loss['total'] * tensor.size(0)
+                running_stats['class_loss'] += loss['class'] * tensor.size(0)
+                running_stats['energy_loss'] += loss['energy'] * tensor.size(0)
+
+            else:
+                running_stats['total_loss'] += loss * tensor.size(0)
+
             running_stats['count'] += tensor.size(0)
 
     n = running_stats['count']
 
     metrics = {
-        'loss': running_stats['loss'] / n
+        'total_loss': running_stats['total_loss'] / n,
+        'class_loss': running_stats['class_loss'] / n,
+        'energy_loss': running_stats['energy_loss'] / n
     }
 
     return metrics
@@ -85,6 +117,7 @@ def train(params):
     lr = params['lr']
     weight_decay = params['weight_decay']
     epoch_n_print = params['epoch_n_print']
+    do_evaluate = params['evaluate']
     
     config = Config.from_key(params['config'])
     model = config.get_model()
@@ -118,13 +151,20 @@ def train(params):
 
     model.to(device)
 
-    optimiser = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    optimiser = model.get_optimiser(lr=lr, weight_decay=weight_decay)
+    
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimiser, mode='min', factor=0.5, patience=5)
 
     results = {
         'epoch': [],
         'train_loss': [],
-        'val_loss': []
+        'val_loss': [],
+        'train_class_loss': [],
+        'train_energy_loss': [],
+        'val_class_loss': [],
+        'val_energy_loss': [],
+        'val_precision': [],
+        'val_recall': []
     }
 
     for epoch in range(1, n_epochs + 1):
@@ -132,15 +172,45 @@ def train(params):
         train_m = train_epoch(model, train_loader, target, optimiser, device)
         val_m = eval_epoch(model, val_loader, target, device)
 
-        scheduler.step(val_m['loss'])
+        scheduler.step(val_m['total_loss'])
 
         results['epoch'].append(epoch)
-        results['train_loss'].append(train_m['loss'])
-        results['val_loss'].append(val_m['loss'])
+        results['train_loss'].append(train_m['total_loss'])
+        results['val_loss'].append(val_m['total_loss'])
+
+        results['train_class_loss'].append(train_m['class_loss'])
+        results['val_class_loss'].append(val_m['class_loss'])
+
+        results['train_energy_loss'].append(train_m['energy_loss'])
+        results['val_energy_loss'].append(val_m['energy_loss'])
 
         if epoch % epoch_n_print == 0:
+
             print(
                 f'Epoch {epoch} '
-                f'| train loss {train_m["loss"]:.4f} '
-                f'| val loss {val_m["loss"]:.4f}'
+                f'| Train loss {train_m["total_loss"]:.4f} '
+                f'| Val loss {val_m["total_loss"]:.4f} '
+                f'| Precision {precision:.4f} '
+                f'| Recall {recall:.4f}'
             )
+
+        # evaluate model statistics
+
+        if do_evaluate:
+
+            evaluate_m = DETR_Model.evaluate(model=model, loader=val_loader, device=device)
+            precision = evaluate_m["precision"]
+            recall = evaluate_m["recall"]
+
+            results['val_precision'].append(precision)
+            results['val_recall'].append(recall)
+
+            if epoch % epoch_n_print == 0:
+
+                print(
+                    f'\nPrecision {precision:.4f} '
+                    f'| Recall {recall:.4f}\n'
+                )
+
+    df = pd.DataFrame(results)
+    df.to_csv(f'out/results/{params["config"]}.csv', index=False)

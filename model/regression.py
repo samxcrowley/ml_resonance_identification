@@ -19,3 +19,7 @@ class Regression_Model(nn.Module):
 
     def forward(self, x):
         return self.model(x)
+
+    def get_optimiser(lr, weight_decay):
+        optimiser = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+        return optimiser

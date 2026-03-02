@@ -141,9 +141,9 @@ def train(params):
         'epoch': []
     }
 
-    for l in train_stats:
-        results[f'train_{l}'] = []
-        results[f'val_{l}'] = []
+    for stat in train_stats:
+        results[f'train_{stat}'] = []
+        results[f'val_{stat}'] = []
 
     if do_evaluate:
         results['val_precision'] = []

@@ -3,6 +3,16 @@ import torch.nn.functional as F
 import torchvision.transforms
 import data
 
+def _cnn_transform(sobel=False):
+
+    ls = [
+        _lambda(lambda x: _unsqueeze(x, 0))
+    ]
+
+    transform = torchvision.transforms.Compose(ls)
+
+    return transform
+
 def _resnet34_transform(sobel=False):
 
     ls = []
@@ -40,6 +50,10 @@ def _normalise(x, min=None, max=None):
         max = x.max()
 
     return (x - min) / (max - min)
+
+def _unsqueeze(x, dim):
+    x = x.unsqueeze(dim=dim)
+    return x
 
 def _print_shape(x):
     print(x.shape)

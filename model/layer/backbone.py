@@ -8,24 +8,43 @@ class Backbone(nn.Module):
 
         super().__init__()
 
-        self.resnet = torchvision.models.resnet101(
-            weights='DEFAULT',
-            norm_layer=torchvision.ops.FrozenBatchNorm2d
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(1, 32, kernel_size=5, stride=(1, 2), padding=2),
+            nn.BatchNorm2d(32),
+            nn.ReLU()
         )
 
-        self.resnet = nn.Sequential(*list(self.resnet.children())[:-2])
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(32, 64, kernel_size=5, stride=(1, 2), padding=2),
+            nn.BatchNorm2d(64),
+            nn.ReLU()
+        )
 
-        self.proj = nn.Conv2d(
-            in_channels=d_backbone,
-            out_channels=d_transformer,
-            kernel_size=1
+        self.conv3 = nn.Sequential(
+            nn.Conv2d(64, 128, kernel_size=3, stride=(2, 2), padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU()
+        )
+
+        self.conv4 = nn.Sequential(
+            nn.Conv2d(128, d_transformer, kernel_size=3, stride=(2, 2), padding=1),
+            nn.BatchNorm2d(d_transformer),
+            nn.ReLU()
         )
 
     def forward(self, x):
 
-        x = self.resnet(x) # [N, C, H, W]
-        x = self.proj(x) # [N, D, H, W]
-        x = x.permute(0, 2, 3, 1) # [N, H, W, D]
-        x = x.flatten(1, 2) # [N, HW, D]
+        x = self.conv1(x)
 
+        x = self.conv2(x)
+
+        x = self.conv3(x)
+
+        x = self.conv4(x)
+        
+        x = x.flatten(2)
+
+        x = x.permute(0, 2, 1)
+
+        # [N, HW, D]
         return x

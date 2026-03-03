@@ -7,7 +7,7 @@ from torch.utils.data import Dataset
 import matplotlib.pyplot as plt
 import transforms
 
-MAX_RESONANCES = 10
+MAX_RESONANCES = 5
 
 # x, y are the axes and z is the value at each point
 x_key = 'theta_cm_out'
@@ -157,8 +157,12 @@ class ResonanceDataset(Dataset):
 
     def __init__(self, path, transform=None):
 
-        self.tensors = get_tensors(path)
-        self.targets = get_targets(path)
+        # self.tensors = get_tensors(path)
+        # self.targets = get_targets(path)
+
+        self.tensors = torch.load('data/processed/5res_training.gz_tensors.pt')
+        self.targets = torch.load('data/processed/5res_training.gz_targets.pt')
+
         self.transform = transform
 
     def __len__(self):

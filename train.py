@@ -6,6 +6,9 @@ import data
 from config import Config
 import numpy as np
 import pandas as pd
+import json
+import os
+from datetime import datetime
 from model.detr import DETR_Model
 
 train_stats = ['total_loss', 'class_loss', 'energy_loss', 'gamma_total_loss']
@@ -23,7 +26,6 @@ def run_epoch(model, loader, _target, is_eval, optimiser, device):
         stats[stat] = 0.0
 
     for tensor, targets in loader:
-    # for i, (tensor, targets) in enumerate(loader):
 
         tensor = tensor.to(device, non_blocking=True)
         
@@ -40,12 +42,13 @@ def run_epoch(model, loader, _target, is_eval, optimiser, device):
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimiser.step()
 
-        if is_eval:
-            with torch.no_grad():
-                for stat in loss.keys():
-                    stats[stat] += loss[stat] * tensor.size(0)
-        else:
-            for stat in loss.keys():
+        for stat in loss.keys():
+
+            # TODO: this is a quick workaround as total_loss is returned as a tensor
+            # so that we can call .backward() on it
+            if stat == 'total_loss':
+                stats[stat] += loss[stat].item() * tensor.size(0)
+            else:
                 stats[stat] += loss[stat] * tensor.size(0)
         
         n += tensor.size(0)
@@ -59,6 +62,7 @@ def train(params):
 
     seed = params['seed']
     data_filename = params['data_filename']
+    data.MAX_RESONANCES = params['max_resonances']
     n_subset = params['n_subset']
     num_workers = params['num_workers']
     batch_size = params['batch_size']
@@ -164,5 +168,17 @@ def train(params):
                     f'| Recall {recall:.4f}\n'
                 )
 
+    # save results
+    run_id = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{params['config']}"
+    run_dir = os.path.join('out', 'runs', run_id)
+    os.makedirs(run_dir, exist_ok=True)
+
+    with open(os.path.join(run_dir, 'params.json'), 'w') as f:
+        json.dump(params, f, indent=4)
+
     df = pd.DataFrame(results)
-    df.to_csv(f'out/results/{params["config"]}.csv', index=False)
+    df.to_csv(os.path.join(run_dir, 'results.csv'), index=False)
+
+    print(f'\nResults saved to {run_dir}')
+
+    return run_id

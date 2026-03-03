@@ -1,12 +1,19 @@
 import train
 import json
+import os
+from plotting import plot_results
 
 with open('params.json', 'r') as f:
     params = json.load(f)
 
-config = params['config']
+print(f'Config `{params["config"]}` loaded.\n')
 
-print(f'Config `{config}` loaded.\n')
+run_id = train.train(params)
 
-# train the model and output training results
-train.train(params)
+run_dir = os.path.join('out', 'runs', run_id)
+
+plot_results(
+    path=os.path.join(run_dir, 'results.csv'),
+    title=run_id,
+    out_path=os.path.join(run_dir, 'plot.png')
+)

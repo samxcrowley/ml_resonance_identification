@@ -12,29 +12,8 @@ class Config(Enum):
     DETR = (
         'detr',
         DETR_Model,
-        transforms._resnet34_transform(sobel=True),
-        Target.DETR
-    )
-
-    DETR_SMALL_BACKBONE = (
-        'detr_small_backbone',
-        DETR_Model,
         transforms._cnn_transform(sobel=True),
         Target.DETR
-    )
-
-    ENERGY = (
-        'energy',
-        Regression_Model,
-        transforms._resnet34_transform(sobel=True),
-        Target.ENERGY
-    )
-
-    N_RES = (
-        'n_res',
-        Regression_Model,
-        transforms._resnet34_transform(sobel=True),
-        Target.N_RES
     )
 
     def __init__(self, key, model, transform, target):

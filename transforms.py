@@ -13,7 +13,7 @@ def _cnn_transform(sobel=False):
 
     return transform
 
-def _resnet34_transform(sobel=False):
+def _resnet_transform(sobel=False):
 
     ls = []
 

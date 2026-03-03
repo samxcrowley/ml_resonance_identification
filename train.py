@@ -143,7 +143,7 @@ def train(params):
             print(
                 f'Epoch {epoch} '
                 f'| Train loss {train_m["total_loss"]:.4f} '
-                f'| Val loss {val_m["total_loss"]:.4f}'
+                f'| Val loss {val_m["total_loss"]:.4f} '
             )
 
         # evaluate model statistics
@@ -160,7 +160,7 @@ def train(params):
             if epoch % epoch_n_print == 0:
 
                 print(
-                    f'\nPrecision {precision:.4f} '
+                    f'Precision {precision:.4f} '
                     f'| Recall {recall:.4f}\n'
                 )
 

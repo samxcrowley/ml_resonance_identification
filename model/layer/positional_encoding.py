@@ -8,16 +8,7 @@ class PositionalEncoding(nn.Module):
 
         super().__init__()
         
-        pe = torch.zeros(max_len, d_transformer)
-        position = torch.arange(0, max_len).unsqueeze(1).float()
-        div = torch.exp(
-            torch.arange(0, d_transformer, 2).float() * (-math.log(10000.0) / d_transformer)
-        )
-
-        pe[:, 0::2] = torch.sin(position * div)
-        pe[:, 1::2] = torch.cos(position * div)
-
-        self.register_buffer('pos_enc', pe)
+        self.pos_enc = nn.Parameter(torch.zeros(max_len, d_transformer))
 
     def forward(self, x):
 

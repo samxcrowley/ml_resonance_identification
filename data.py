@@ -7,7 +7,8 @@ from torch.utils.data import Dataset
 import matplotlib.pyplot as plt
 import transforms
 
-MAX_RESONANCES = 5
+# set in params.json, default is 20
+MAX_RESONANCES = 20
 
 # x, y are the axes and z is the value at each point
 x_key = 'theta_cm_out'

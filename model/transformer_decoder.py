@@ -22,6 +22,7 @@ class Transformer_Decoder_Model(nn.Module):
         for layer in self.layers:
 
             x, cross_att = layer(x, enc, pos_enc, query_pos)
-            x = self.norm(x)
+
+        x = self.norm(x)
 
         return x, cross_att

@@ -1,6 +1,5 @@
 from enum import Enum
 from model.detr import DETR_Model
-from model.test_model import Test_Model
 from model.regression import Regression_Model
 from model.transformer_encoder import Transformer_Encoder_Model
 import model.models as models
@@ -21,13 +20,6 @@ class Config(Enum):
         'detr_small_backbone',
         DETR_Model,
         transforms._cnn_transform(sobel=True),
-        Target.DETR
-    )
-
-    TEST_DETR = (
-        'test_detr',
-        Test_Model,
-        None,
         Target.DETR
     )
 

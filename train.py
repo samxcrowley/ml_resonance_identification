@@ -122,10 +122,9 @@ def train(params):
     for stat in train_stats:
         results[f'train_{stat}'] = []
         results[f'val_{stat}'] = []
-
-    if do_evaluate:
-        results['val_precision'] = []
-        results['val_recall'] = []
+        
+    results['val_precision'] = []
+    results['val_recall'] = []
 
     print('Starting training...\n')
 

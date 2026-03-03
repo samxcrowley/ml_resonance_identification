@@ -1,28 +1,14 @@
 import torch
 from torch import nn
-from torch.utils.data import DataLoader, random_split
+import torch.nn.functional as F
+from torch.utils.data import DataLoader, random_split, Subset
 import data
 from config import Config
+import numpy as np
 import pandas as pd
 from model.detr import DETR_Model
 
 train_stats = ['total_loss', 'class_loss', 'energy_loss', 'gamma_total_loss']
-
-def run_batch(tensor, targets, _target, model, device):
-
-    tensor = tensor.to(device, non_blocking=True)
-
-    preds = model(tensor)
-
-    targets = _target.get_targets(targets)
-    
-    if type(targets) is not dict:
-        targets = targets.to(device, non_blocking=True)
-
-    loss_fn = _target.get_loss_fn()
-    loss = loss_fn(preds, targets)
-
-    return loss
 
 def run_epoch(model, loader, _target, is_eval, optimiser, device):
 
@@ -37,8 +23,16 @@ def run_epoch(model, loader, _target, is_eval, optimiser, device):
         stats[stat] = 0.0
 
     for tensor, targets in loader:
+    # for i, (tensor, targets) in enumerate(loader):
 
-        loss = run_batch(tensor, targets, _target, model, device)
+        tensor = tensor.to(device, non_blocking=True)
+        
+        preds = model(tensor)
+
+        targets = _target.get_targets(targets)
+
+        loss_fn = _target.get_loss_fn()
+        loss = loss_fn(preds, targets)
 
         if not is_eval:
             optimiser.zero_grad()
@@ -50,7 +44,6 @@ def run_epoch(model, loader, _target, is_eval, optimiser, device):
             with torch.no_grad():
                 for stat in loss.keys():
                     stats[stat] += loss[stat] * tensor.size(0)
-
         else:
             for stat in loss.keys():
                 stats[stat] += loss[stat] * tensor.size(0)
@@ -66,6 +59,7 @@ def train(params):
 
     seed = params['seed']
     data_filename = params['data_filename']
+    n_subset = params['n_subset']
     num_workers = params['num_workers']
     batch_size = params['batch_size']
     n_epochs = params['n_epochs']
@@ -83,6 +77,7 @@ def train(params):
     print(f'Using device: {device}\n')
 
     dataset = data.ResonanceDataset(data_filename, transform=transform)
+    dataset = Subset(dataset, np.arange(n_subset))
 
     train_size = int(0.8 * len(dataset))
     val_size = len(dataset) - train_size
@@ -145,7 +140,6 @@ def train(params):
             results[f'val_{stat}'].append(val_m[stat])
 
         if epoch % epoch_n_print == 0:
-
             print(
                 f'Epoch {epoch} '
                 f'| Train loss {train_m["total_loss"]:.4f} '
@@ -156,7 +150,7 @@ def train(params):
 
         if do_evaluate:
 
-            evaluate_m = DETR_Model.evaluate(model=model, loader=val_loader, device=device)
+            evaluate_m = model.evaluate(loader=val_loader, device=device)
             precision = evaluate_m["precision"]
             recall = evaluate_m["recall"]
 

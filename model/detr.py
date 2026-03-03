@@ -74,7 +74,7 @@ class DETR_Model(nn.Module):
             nn.Linear(d_transformer, d_transformer),
             nn.ReLU(),
             nn.Linear(d_transformer, 1),
-            # nn.Sigmoid() # energy in [0, 1]
+            nn.Sigmoid() # energy in [0, 1]
         )
 
         self.gamma_total_head = nn.Sequential(
@@ -271,7 +271,7 @@ class DETR_Loss(nn.Module):
         total += self.cost_gamma_total * loss_gamma_total
 
         loss = {
-            'total_loss': total,
+            'total_loss': total, # can't call .item() because we run .backward() on this in train
             'class_loss': loss_class.item(),
             'energy_loss': loss_energy.item(),
             'gamma_total_loss': loss_gamma_total.item()

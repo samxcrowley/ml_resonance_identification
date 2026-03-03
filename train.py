@@ -70,7 +70,6 @@ def train(params):
     lr = params['lr']
     weight_decay = params['weight_decay']
     epoch_n_print = params['epoch_n_print']
-    do_evaluate = params['evaluate']
     
     config = Config.from_key(params['config'])
     model = config.get_model()
@@ -152,21 +151,19 @@ def train(params):
 
         # evaluate model statistics
 
-        if do_evaluate:
+        evaluate_m = model.evaluate(loader=val_loader, device=device)
+        precision = evaluate_m["precision"]
+        recall = evaluate_m["recall"]
 
-            evaluate_m = model.evaluate(loader=val_loader, device=device)
-            precision = evaluate_m["precision"]
-            recall = evaluate_m["recall"]
+        results['val_precision'].append(precision)
+        results['val_recall'].append(recall)
 
-            results['val_precision'].append(precision)
-            results['val_recall'].append(recall)
+        if epoch % epoch_n_print == 0:
 
-            if epoch % epoch_n_print == 0:
-
-                print(
-                    f'Precision {precision:.4f} '
-                    f'| Recall {recall:.4f}\n'
-                )
+            print(
+                f'Precision {precision:.4f} '
+                f'| Recall {recall:.4f}\n'
+            )
 
     # save results
     run_id = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{params['config']}"

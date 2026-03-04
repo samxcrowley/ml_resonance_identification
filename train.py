@@ -61,8 +61,7 @@ def run_epoch(model, loader, _target, is_eval, optimiser, device):
 def train(params):
 
     seed = params['seed']
-    data_filename = params['data_filename']
-    data.MAX_RESONANCES = params['max_resonances']
+    max_resonances = params['max_resonances']
     n_subset = params['n_subset']
     num_workers = params['num_workers']
     batch_size = params['batch_size']
@@ -79,8 +78,13 @@ def train(params):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f'Using device: {device}\n')
 
-    dataset = data.ResonanceDataset(data_filename, transform=transform)
-    dataset = Subset(dataset, np.arange(n_subset))
+    path = f'data/preprocessed/nlevels_{max_resonances}.pt'
+
+    dataset = data.ResonanceDataset(path, transform=transform)
+
+    # -1 in params['n_subset'] indicates to use the entire dataset
+    if n_subset != -1:
+        dataset = Subset(dataset, np.arange(n_subset))
 
     train_size = int(0.8 * len(dataset))
     val_size = len(dataset) - train_size
@@ -122,7 +126,7 @@ def train(params):
     for stat in train_stats:
         results[f'train_{stat}'] = []
         results[f'val_{stat}'] = []
-        
+
     results['val_precision'] = []
     results['val_recall'] = []
 
@@ -141,26 +145,20 @@ def train(params):
             results[f'train_{stat}'].append(train_m[stat])
             results[f'val_{stat}'].append(val_m[stat])
 
-        if epoch % epoch_n_print == 0:
-            print(
-                f'Epoch {epoch} '
-                f'| Train loss {train_m["total_loss"]:.4f} '
-                f'| Val loss {val_m["total_loss"]:.4f} '
-            )
-
         # evaluate model statistics
 
         evaluate_m = model.evaluate(loader=val_loader, device=device)
         precision = evaluate_m["precision"]
         recall = evaluate_m["recall"]
-
         results['val_precision'].append(precision)
         results['val_recall'].append(recall)
 
         if epoch % epoch_n_print == 0:
-
             print(
-                f'Precision {precision:.4f} '
+                f'Epoch {epoch} '
+                f'| Train loss {train_m["total_loss"]:.4f} '
+                f'| Val loss {val_m["total_loss"]:.4f} '
+                f'| Precision {precision:.4f} '
                 f'| Recall {recall:.4f}\n'
             )
 

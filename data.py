@@ -11,36 +11,36 @@ import transforms
 MAX_RESONANCES = 20
 
 # x, y are the axes and z is the value at each point
-x_key = 'theta_cm_out'
+x_key = 'theta_3_cm'
 y_key = 'cn_ex'
 z_key = 'dsdO'
 
-# output sequence shape:
-# [n, E, A]
-def get_tensors(data_filename):
+# process loaded JSON list into (tensors [ls], targets [dict])
+def process_json(data):
 
-    data = open_data_file(f'data/{data_filename}')
+    tensors = get_tensors_from_json(data)
+    targets = get_targets_from_json(data)
 
-    n = len(data)
+    return tensors, targets
+
+# process a loaded JSON list into a list of tensors
+def get_tensors_from_json(data):
 
     tensors = []
-    
-    for i in range(n):
-        
-        points = data[i]['observable_sets'][0]['points']
 
-        xs = sorted(set(p[x_key] for p in points))
-        ys = sorted(set(p[y_key] for p in points))
+    for sample in data:
+
+        points = sample['observable_sets'][0]['points']
+
+        xs, ys = get_xs_ys(points)
 
         x_idx = {x: i for i, x in enumerate(xs)}
         y_idx = {y: i for i, y in enumerate(ys)}
-        
+
         tensor = torch.zeros(len(ys), len(xs))
 
         for p in points:
-
-            z = np.log10(p[z_key])
-
+            z = np.log10(max(p[z_key], 1e-30))
             x = x_idx[p[x_key]]
             y = y_idx[p[y_key]]
             tensor[y, x] = z
@@ -49,46 +49,44 @@ def get_tensors(data_filename):
 
     return tensors
 
-def get_targets(data_filename, n_class_targets=2, n_reg_targets=2):
-    
-    data = open_data_file(f'data/{data_filename}')
-
-    n = len(data)
+# process a loaded JSON list into stacked target tensors
+def get_targets_from_json(data):
 
     class_targets = []
     energy_targets = []
     gamma_total_targets = []
     n_res_targets = []
-    
-    for i in range(n):
 
-        points = data[i]['observable_sets'][0]['points']
+    for sample in data:
+
+        points = sample['observable_sets'][0]['points']
+
         xs, ys = get_xs_ys(points)
 
-        n_resonances = len(data[i]['levels'])
+        n_resonances = len(sample['levels'])
 
-        class_target = torch.zeros([MAX_RESONANCES, n_class_targets], dtype=torch.float32)
-
+        class_target = torch.zeros([MAX_RESONANCES, 2], dtype=torch.float32)
         energy_target = torch.zeros([MAX_RESONANCES, 1], dtype=torch.float32)
         gamma_total_target = torch.zeros([MAX_RESONANCES, 1], dtype=torch.float32)
 
         for n in range(n_resonances):
 
-            level = data[i]['levels'][n]
+            level = sample['levels'][n]
 
+            # normalise energy
             energy = level['energy']
             energy = transforms._normalise(energy, min(ys), max(ys))
             energy_target[n] = energy
 
-            gamma_total = level['Gamma_total']
-            gamma_total = np.log10(gamma_total)
+            # sum gammas and take the log
+            gamma_total = 0.0
+            gammas = level['Gamma']
+            for gamma in gammas:
+                gamma_total += gamma
+            gamma_total = np.log10(max(gamma_total, 1e-30))
             gamma_total_target[n] = gamma_total
 
-        # fill class targets
-        # class 0: no resonance
-        # class 1: resonance
         for n in range(MAX_RESONANCES):
-
             if n < n_resonances:
                 class_target[n, 1] = 1.0
             else:
@@ -98,19 +96,14 @@ def get_targets(data_filename, n_class_targets=2, n_reg_targets=2):
         energy_targets.append(energy_target)
         gamma_total_targets.append(gamma_total_target)
 
-        n_resonances = transforms._normalise(n_resonances, 0, 10)
-        n_res_targets.append(n_resonances)
-
-    class_targets = torch.stack(class_targets, dim=0)
-    energy_targets = torch.stack(energy_targets, dim=0)
-    gamma_total_targets = torch.stack(gamma_total_targets, dim=0)
-    n_res_targets = torch.tensor(n_res_targets, dtype=torch.float32)
+        n_res_norm = transforms._normalise(n_resonances, 0, MAX_RESONANCES)
+        n_res_targets.append(n_res_norm)
 
     return {
-        'class': class_targets,
-        'energy': energy_targets,
-        'gamma_total': gamma_total_targets,
-        'n_res': n_res_targets
+        'class': torch.stack(class_targets),
+        'energy': torch.stack(energy_targets),
+        'gamma_total': torch.stack(gamma_total_targets),
+        'n_res': torch.tensor(n_res_targets, dtype=torch.float32),
     }
 
 def open_data_file(path):
@@ -136,33 +129,15 @@ def get_xs_ys(points):
 
     return xs, ys
 
-# display a tensor of shape [H, W]
-def display_tensor(tensor, name):
-
-    tensor = tensor.permute(1, 0)
-
-    plt.figure(figsize=(10, 6))
-    plt.imshow(tensor.numpy(), cmap='viridis', aspect='auto')
-    plt.colorbar()
-    plt.savefig(f'out/tensor/{name}')
-
-# display an RGB image
-def display_image(img, name):
-    
-    plt.figure(figsize=(10, 6))
-    plt.imshow(img.permute(1, 2, 0).numpy(), aspect='auto')
-    plt.axis('off')
-    plt.savefig(f'out/image/{name}')
-
 class ResonanceDataset(Dataset):
 
+    # accepts preprocessed .pt files only
     def __init__(self, path, transform=None):
+            
+        saved = torch.load(path, weights_only=False)
 
-        # self.tensors = get_tensors(path)
-        # self.targets = get_targets(path)
-
-        self.tensors = torch.load('data/processed/5res_training.gz_tensors.pt')
-        self.targets = torch.load('data/processed/5res_training.gz_targets.pt')
+        self.tensors = saved['tensors']
+        self.targets = saved['targets']
 
         self.transform = transform
 
@@ -174,9 +149,7 @@ class ResonanceDataset(Dataset):
         tensor = self.tensors[idx]
         if self.transform:
             tensor = self.transform(tensor)
-        
-        target = {}
-        for key in self.targets.keys():
-            target[key] = self.targets[key][idx]
+
+        target = {key: self.targets[key][idx] for key in self.targets}
 
         return tensor, target

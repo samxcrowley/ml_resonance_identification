@@ -51,3 +51,21 @@ def plot_results(path, title, out_path, subtitle=None):
     print(f"Saved plots to {out_path}.")
 
     plt.close(fig)
+
+# display a tensor of shape [H, W]
+def display_tensor(tensor, name):
+
+    tensor = tensor.permute(1, 0)
+
+    plt.figure(figsize=(10, 6))
+    plt.imshow(tensor.numpy(), cmap='viridis', aspect='auto')
+    plt.colorbar()
+    plt.savefig(f'out/tensor/{name}')
+
+# display an RGB image
+def display_image(img, name):
+
+    plt.figure(figsize=(10, 6))
+    plt.imshow(img.permute(1, 2, 0).numpy(), aspect='auto')
+    plt.axis('off')
+    plt.savefig(f'out/image/{name}')

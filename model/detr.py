@@ -23,7 +23,7 @@ class DETR_Model(nn.Module):
         dropout_p=0.0,
         n_queries=data.MAX_RESONANCES,
         n_class_targets=2,
-        max_len=300,
+        max_len=1000,
         freeze_backbone=False):
 
         super().__init__()
@@ -123,7 +123,7 @@ class DETR_Model(nn.Module):
 
         return optimiser
 
-    def evaluate(self, loader, device, energy_tolerance=0.1):
+    def evaluate(self, loader, device, energy_tolerance=0.05):
 
         self.eval()
 

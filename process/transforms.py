@@ -1,18 +1,20 @@
 import torch
 import torch.nn.functional as F
 import torchvision.transforms
-import data
+import process.data as data
 import numpy as np
 
-def _detr_transform(sobel=True, noise_sigma_log10=0.0):
+def _detr_transform(sobel=True, noise_sigma_log10=0.1):
 
     ls = []
 
-    if noise_sigma_log10 > 0.0:
-        ls.append(_lambda(lambda x: _add_noise(x, noise_sigma_log10)))
+    # if noise_sigma_log10 > 0.0:
+    #     ls.append(_lambda(lambda x: _add_noise(x, noise_sigma_log10)))
 
     if sobel:
         ls.append(_lambda(lambda x: _sobel(x)))
+
+    # ls.append(_lambda(lambda x: _unsqueeze(x, dim=0)))
 
     transform = torchvision.transforms.Compose(ls)
 
@@ -99,7 +101,7 @@ def _crop(tensor, target, strength=0.0):
     # mark padded slots as no-resonance in class target
     cropped_target['class'][n_kept:, 0] = 1.0
 
-    cropped_target['n_res'] = torch.tensor(n_kept, dtype=target['n_res'].dtype)
+    cropped_target['n_res'] = _normalise(torch.tensor(n_kept, dtype=target['n_res'].dtype), 0, data.MAX_RESONANCES)
 
     return cropped_tensor, cropped_target
 
@@ -138,16 +140,28 @@ def _sobel(x):
                         [ 0,  0,  0],
                         [ 1,  2,  1]], dtype=torch.float32)
 
-    # [1, 1, W, H]
-    x = x.float().unsqueeze(0).unsqueeze(0)
+    has_mask = x.dim() == 3
+    if has_mask:
+        data_ch = x[0]
+        mask = x[1]
+    else:
+        data_ch = x
+
+    # [1, 1, E, A]
+    inp = data_ch.float().unsqueeze(0).unsqueeze(0)
 
     # [1, 1, 3, 3]
     Kx = Kx.unsqueeze(0).unsqueeze(0)
     Ky = Ky.unsqueeze(0).unsqueeze(0)
 
-    Gx = F.conv2d(x, Kx, padding=1)
-    Gy = F.conv2d(x, Ky, padding=1)
+    Gx = F.conv2d(inp, Kx, padding=1)
+    Gy = F.conv2d(inp, Ky, padding=1)
 
-    magnitude = torch.sqrt(Gx**2 + Gy**2)
+    magnitude = torch.sqrt(Gx**2 + Gy**2).squeeze()
 
-    return magnitude.squeeze()
+    if has_mask:
+        # zero out false edges at crop boundaries
+        magnitude = magnitude * mask
+        return torch.stack([magnitude, mask], dim=0)
+
+    return magnitude

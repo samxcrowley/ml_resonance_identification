@@ -68,7 +68,7 @@ def run_epoch(n_epoch, model, loader, _target, is_eval, optimiser, device):
 def train(params):
 
     seed = params['seed']
-    
+
     max_resonances = params['max_resonances']
     data.MAX_RESONANCES = max_resonances
 
@@ -188,6 +188,8 @@ def train(params):
 
     df = pd.DataFrame(results)
     df.to_csv(os.path.join(run_dir, 'results.csv'), index=False)
+
+    torch.save(model.state_dict(), os.path.join(run_dir, 'model.pt'))
 
     print(f'\nResults saved to {run_dir}')
 

@@ -369,7 +369,7 @@ class HungarianMatcher(nn.Module):
             cost += self.cost_jpi_index * cost_jpi_index
 
             # Hungarian algorithm
-            cost = cost.cpu().numpy()
+            cost = cost.float().cpu().numpy()
 
             pred_idx, target_idx = linear_sum_assignment(cost)
 

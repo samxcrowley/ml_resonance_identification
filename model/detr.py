@@ -22,8 +22,7 @@ class DETR_Model(nn.Module):
         n_layers=6,
         dropout_p=0.0,
         n_queries=data.MAX_RESONANCES,
-        max_len=1000,
-        freeze_backbone=False):
+        max_len=1000):
 
         super().__init__()
 
@@ -31,10 +30,6 @@ class DETR_Model(nn.Module):
             d_backbone=d_backbone,
             d_transformer=d_transformer
         )
-
-        if freeze_backbone:
-            for param in self.backbone.parameters():
-                param.requires_grad = False
 
         self.encoder = transformer_encoder.Transformer_Encoder_Model(
             d_model=d_transformer,
@@ -108,17 +103,9 @@ class DETR_Model(nn.Module):
 
         return preds
 
-    def get_optimiser(self, lr, weight_decay, slow_backbone=False):
+    def get_optimiser(self, lr, weight_decay):
 
-        if slow_backbone:
-            backbone_lr = 1e-6
-        else:
-            backbone_lr = lr
-
-        optimiser = torch.optim.AdamW([
-            {'params': self.backbone.parameters(), 'lr': backbone_lr},
-            {'params': [p for n, p in self.named_parameters() if 'backbone' not in n], 'lr': lr}
-        ], weight_decay=weight_decay)
+        optimiser = torch.optim.AdamW(lr=lr, weight_decay=weight_decay)
 
         return optimiser
 

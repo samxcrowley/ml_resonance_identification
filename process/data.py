@@ -1,5 +1,6 @@
 import gzip
 import json
+import multiprocessing
 import numpy as np
 import pandas as pd
 import torch
@@ -145,15 +146,24 @@ class ResonanceDataset(Dataset):
 
     # accepts preprocessed .pt files only
     def __init__(self, path, crop_strength, transform=None):
-            
+
         saved = torch.load(path, weights_only=False)
 
         self.tensors = saved['tensors']
         self.targets = saved['targets']
 
-        self.crop_strength = crop_strength
+        # shared memory so persistent DataLoader workers see updates
+        self._crop_strength = multiprocessing.Value('d', crop_strength)
 
         self.transform = transform
+
+    @property
+    def crop_strength(self):
+        return self._crop_strength.value
+
+    @crop_strength.setter
+    def crop_strength(self, value):
+        self._crop_strength.value = value
 
     def __len__(self):
         return len(self.tensors)
@@ -163,10 +173,10 @@ class ResonanceDataset(Dataset):
         tensor = self.tensors[idx]
         target = {key: self.targets[key][idx] for key in self.targets}
 
-        if self.transform:
-            tensor = self.transform(tensor)
-
         # crop
         tensor, target = transforms._crop(tensor, target, self.crop_strength)
+
+        if self.transform:
+            tensor = self.transform(tensor)
 
         return tensor, target

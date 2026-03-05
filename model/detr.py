@@ -10,79 +10,84 @@ from model.layer import backbone
 from model.layer import positional_encoding
 from scipy.optimize import linear_sum_assignment
 import data
+import json
 
 class DETR_Model(nn.Module):
 
-    def __init__(
-        self,
-        header,
-        d_backbone=512,
-        d_transformer=512,
-        n_hidden=2048,
-        n_head=8,
-        n_layers=6,
-        dropout_p=0.0,
-        n_queries=data.MAX_RESONANCES,
-        max_len=1000):
+    def __init__(self, header, params_file='detr_params.json'):
 
         super().__init__()
 
+        with open(params_file, 'r') as f:
+            params = json.load(f)
+
+        self.d_backbone = params['d_backbone']
+        self.d_transformer = params['d_transformer']
+        self.n_hidden = params['n_hidden']
+        self.n_head = params['n_head']
+        self.n_layers = params['n_layers']
+        self.dropout_p = params['dropout_p']
+
+        self.n_queries = data.MAX_RESONANCES
+        self.n_jpi_sets = header.n_jpi_sets
+
+        self.pos_enc_max_len = 1000
+
         self.backbone = backbone.Backbone(
-            d_backbone=d_backbone,
-            d_transformer=d_transformer
+            d_backbone=self.d_backbone,
+            d_transformer=self.d_transformer
         )
 
         self.encoder = transformer_encoder.Transformer_Encoder_Model(
-            d_model=d_transformer,
-            n_hidden=n_hidden,
-            n_head=n_head,
-            n_layers=n_layers,
-            dropout_p=dropout_p
+            d_model=self.d_transformer,
+            n_hidden=self.n_hidden,
+            n_head=self.n_head,
+            n_layers=self.n_layers,
+            dropout_p=self.dropout_p
         )
 
         self.decoder = transformer_decoder.Transformer_Decoder_Model(
-            d_model=d_transformer,
-            n_hidden=n_hidden,
-            n_head=n_head,
-            n_layers=n_layers,
-            dropout_p=dropout_p
+            d_model=self.d_transformer,
+            n_hidden=self.n_hidden,
+            n_head=self.n_head,
+            n_layers=self.n_layers,
+            dropout_p=self.dropout_p
         )
 
         self.pos_enc = positional_encoding.PositionalEncoding(
-            max_len=max_len,
-            d_transformer=d_transformer
+            max_len=self.pos_enc_max_len,
+            d_transformer=self.d_transformer
         )
 
         self.query_embedding = nn.Embedding(
-            n_queries,
-            d_transformer
+            self.n_queries,
+            self.d_transformer
         )
 
         self.class_head = nn.Linear(
-            d_transformer,
+            self.d_transformer,
             2
         )
 
         self.energy_head = nn.Sequential(
-            nn.Linear(d_transformer, d_transformer),
+            nn.Linear(self.d_transformer, self.d_transformer),
             nn.ReLU(),
-            nn.Linear(d_transformer, d_transformer),
+            nn.Linear(self.d_transformer, self.d_transformer),
             nn.ReLU(),
-            nn.Linear(d_transformer, 1),
+            nn.Linear(self.d_transformer, 1),
             nn.Sigmoid() # energy in [0, 1]
         )
 
         self.gamma_total_head = nn.Sequential(
-            nn.Linear(d_transformer, d_transformer),
+            nn.Linear(self.d_transformer, self.d_transformer),
             nn.ReLU(),
-            nn.Linear(d_transformer, d_transformer),
+            nn.Linear(self.d_transformer, self.d_transformer),
             nn.ReLU(),
-            nn.Linear(d_transformer, 1)
+            nn.Linear(self.d_transformer, 1)
         )
 
-        self.n_jpi_sets = header.n_jpi_sets
         self.jpi_index_head = nn.Linear(
-            d_transformer,
+            self.d_transformer,
             self.n_jpi_sets
         )
 
@@ -181,28 +186,24 @@ class DETR_Model(nn.Module):
 
 class DETR_Loss(nn.Module):
 
-    def __init__(
-        self,
-        cost_class=1.0,
-        cost_energy=2.0,
-        cost_gamma_total=0.5,
-        cost_jpi_index=1.0,
-        class_weights=[0.1, 1.0]
-    ):
+    def __init__( self, params_file='detr_params.json'):
 
         super().__init__()
 
-        self.cost_class = cost_class
-        self.cost_energy = cost_energy
-        self.cost_gamma_total = cost_gamma_total
-        self.cost_jpi_index = cost_jpi_index
-        self.class_weights = class_weights
+        with open(params_file, 'r') as f:
+            params = json.load(f)
+
+        self.cost_class = params['cost_class']
+        self.cost_energy = params['cost_energy']
+        self.cost_gamma_total = params['cost_gamma_total']
+        self.cost_jpi_index = params['cost_jpi_index']
+        self.class_weights = params['class_weights']
 
         self.matcher = HungarianMatcher(
-            cost_class,
-            cost_energy,
-            cost_gamma_total,
-            cost_jpi_index
+            self.cost_class,
+            self.cost_energy,
+            self.cost_gamma_total,
+            self.cost_jpi_index
         )
 
     def prepare_targets(self, targets):

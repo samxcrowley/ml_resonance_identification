@@ -3,7 +3,7 @@ import json
 import os
 from plotting import plot_results
 
-with open('params.json', 'r') as f:
+with open('training_params.json', 'r') as f:
     params = json.load(f)
 
 print(f'Config `{params["config"]}` loaded.\n')

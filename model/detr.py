@@ -28,7 +28,7 @@ class DETR_Model(nn.Module):
         self.n_layers = params['n_layers']
         self.dropout_p = params['dropout_p']
 
-        self.n_queries = data.MAX_RESONANCES
+        self.n_queries = data.MAX_RESONANCES*2
         self.n_jpi_sets = header.n_jpi_sets
 
         self.pos_enc_max_len = 1000
@@ -122,7 +122,7 @@ class DETR_Model(nn.Module):
 
         return optimiser
 
-    def evaluate(self, loader, device, energy_tolerance=0.01):
+    def evaluate(self, loader, device, energy_tolerance=0.10):
 
         self.eval()
 
@@ -167,14 +167,16 @@ class DETR_Model(nn.Module):
 
                     difference = pred_energy - target_energy
 
-                    # true positives: matched pairs that are energetically close
+                    # true positives: matched pairs that are confident and close in energy
                     close = (difference).abs() < energy_tolerance
-                    tp = close.sum().item()
+                    confident_matched = preds['class'][n].softmax(-1)[pred_idx, 1] > 0.5
+                    tp = (close & confident_matched).sum().item()
+                    
                     total_detected += tp
 
-                    # false positives: queries predicting resonance that aren't true positives
+                    # false positives: confident queries that aren't true positives
                     n_confident = (preds['class'][n].softmax(-1)[:, 1] > 0.5).sum().item()
-                    total_false_positive += max(0, n_confident - tp)
+                    total_false_positive += n_confident - tp
 
         recall = total_detected / total_true if total_true > 0 else 0
         precision = total_detected / (total_detected + total_false_positive) if (total_detected + total_false_positive) > 0 else 0

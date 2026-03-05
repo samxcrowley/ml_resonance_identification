@@ -27,6 +27,7 @@ class DETR_Model(nn.Module):
         self.n_head = params['n_head']
         self.n_layers = params['n_layers']
         self.dropout_p = params['dropout_p']
+        self.eval_tolerance = params['eval_tolerance']
 
         self.n_queries = data.MAX_RESONANCES*2
         self.n_jpi_sets = header.n_jpi_sets
@@ -122,7 +123,7 @@ class DETR_Model(nn.Module):
 
         return optimiser
 
-    def evaluate(self, loader, device, energy_tolerance=0.10):
+    def evaluate(self, loader, device):
 
         self.eval()
 
@@ -168,7 +169,7 @@ class DETR_Model(nn.Module):
                     difference = pred_energy - target_energy
 
                     # true positives: matched pairs that are confident and close in energy
-                    close = (difference).abs() < energy_tolerance
+                    close = (difference).abs() < self.eval_tolerance
                     confident_matched = preds['class'][n].softmax(-1)[pred_idx, 1] > 0.5
                     tp = (close & confident_matched).sum().item()
                     

@@ -1,7 +1,7 @@
 import train
 import json
 import os
-from plotting import plot_results
+from process.plotting import plot_results
 
 with open('training_params.json', 'r') as f:
     params = json.load(f)

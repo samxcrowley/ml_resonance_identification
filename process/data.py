@@ -5,7 +5,7 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset
 import matplotlib.pyplot as plt
-import transforms
+import process.transforms as transforms
 
 # set in params.json, default is 20
 MAX_RESONANCES = 20

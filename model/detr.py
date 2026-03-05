@@ -9,7 +9,7 @@ from model import transformer_decoder
 from model.layer import backbone
 from model.layer import positional_encoding
 from scipy.optimize import linear_sum_assignment
-import data
+import process.data as data
 import json
 
 class DETR_Model(nn.Module):

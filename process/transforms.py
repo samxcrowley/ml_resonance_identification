@@ -39,6 +39,12 @@ def _encoder_transform(sobel=False):
 
     return transform
 
+# def _crop_tensor_at_random(tensor, target):
+
+
+
+#     return cropped_tensor, cropped_target
+
 def _lambda(foo, flag=True):
     return torchvision.transforms.Lambda(foo if flag else (lambda x: x))
 

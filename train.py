@@ -2,15 +2,15 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, random_split, Subset
-import data
-from config import Config
+from process import data
+from process.config import Config
 import numpy as np
 import pandas as pd
 import json
 import os
 from datetime import datetime
 from model.detr import DETR_Model
-from header import Header
+from process.header import Header
 
 train_stats = [
     'total_loss',

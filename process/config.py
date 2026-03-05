@@ -3,8 +3,8 @@ from model.detr import DETR_Model
 from model.regression import Regression_Model
 from model.transformer_encoder import Transformer_Encoder_Model
 import model
-import transforms
-from targets import Target
+import process.transforms as transforms
+from process.targets import Target
 
 class Config(Enum):
 

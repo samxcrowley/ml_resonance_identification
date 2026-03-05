@@ -56,6 +56,7 @@ def get_targets_from_json(data):
     energy_targets = []
     gamma_total_targets = []
     n_res_targets = []
+    jpi_index_targets = []
 
     for sample in data:
 
@@ -67,7 +68,9 @@ def get_targets_from_json(data):
 
         class_target = torch.zeros([MAX_RESONANCES, 2], dtype=torch.float32)
         energy_target = torch.zeros([MAX_RESONANCES, 1], dtype=torch.float32)
-        gamma_total_target = torch.zeros([MAX_RESONANCES, 1], dtype=torch.float32)
+        gamma_total_target = torch.zeros([MAX_RESONANCES, 1], dtype=torch.
+        float32)
+        jpi_index_target = torch.zeros([MAX_RESONANCES, 1], dtype=torch.float32)
 
         for n in range(n_resonances):
 
@@ -86,6 +89,13 @@ def get_targets_from_json(data):
             gamma_total = np.log10(max(gamma_total, 1e-30))
             gamma_total_target[n] = gamma_total
 
+            # jpi set index
+            jpi_index = level['jpi_index']
+            jpi_index_target[n] = jpi_index
+
+        # fill classes
+        # index 0: no resonance
+        # index 1: resonance
         for n in range(MAX_RESONANCES):
             if n < n_resonances:
                 class_target[n, 1] = 1.0
@@ -95,6 +105,7 @@ def get_targets_from_json(data):
         class_targets.append(class_target)
         energy_targets.append(energy_target)
         gamma_total_targets.append(gamma_total_target)
+        jpi_index_targets.append(jpi_index_target)
 
         n_res_norm = transforms._normalise(n_resonances, 0, MAX_RESONANCES)
         n_res_targets.append(n_res_norm)
@@ -103,6 +114,7 @@ def get_targets_from_json(data):
         'class': torch.stack(class_targets),
         'energy': torch.stack(energy_targets),
         'gamma_total': torch.stack(gamma_total_targets),
+        'jpi_index': torch.stack(jpi_index_targets),
         'n_res': torch.tensor(n_res_targets, dtype=torch.float32),
     }
 

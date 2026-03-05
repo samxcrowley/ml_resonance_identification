@@ -11,4 +11,4 @@ class Header:
             data = json.load(f)
 
         self.jpi_sets = data['jpi_sets']
-        self.n_jpi_sets = len(jpi_sets)
+        self.n_jpi_sets = len(self.jpi_sets)

@@ -15,6 +15,7 @@ class DETR_Model(nn.Module):
 
     def __init__(
         self,
+        header,
         d_backbone=512,
         d_transformer=512,
         n_hidden=2048,
@@ -79,6 +80,12 @@ class DETR_Model(nn.Module):
             nn.Linear(d_transformer, 1)
         )
 
+        self.n_jpi_sets = header.n_jpi_sets
+        self.jpi_index_head = nn.Linear(
+            d_transformer,
+            self.n_jpi_sets
+        )
+
     def forward(self, x):
 
         N = x.size(0)
@@ -98,7 +105,8 @@ class DETR_Model(nn.Module):
         preds = {
             'class': self.class_head(out),
             'energy': self.energy_head(out),
-            'gamma_total': self.gamma_total_head(out)
+            'gamma_total': self.gamma_total_head(out),
+            'jpi_index': self.jpi_index_head(out)
         }
 
         return preds
@@ -121,7 +129,8 @@ class DETR_Model(nn.Module):
         matcher = HungarianMatcher(
             cost_class=loss_fn.cost_class,
             cost_energy=loss_fn.cost_energy,
-            cost_gamma_total=loss_fn.cost_gamma_total
+            cost_gamma_total=loss_fn.cost_gamma_total,
+            cost_jpi_index=loss_fn.cost_jpi_index
         )
 
         with torch.no_grad():
@@ -172,19 +181,28 @@ class DETR_Model(nn.Module):
 
 class DETR_Loss(nn.Module):
 
-    def __init__(self, cost_class=1.0, cost_energy=2.0, cost_gamma_total=0.5, class_weights=[0.1, 1.0]):
+    def __init__(
+        self,
+        cost_class=1.0,
+        cost_energy=2.0,
+        cost_gamma_total=0.5,
+        cost_jpi_index=1.0,
+        class_weights=[0.1, 1.0]
+    ):
 
         super().__init__()
 
         self.cost_class = cost_class
         self.cost_energy = cost_energy
         self.cost_gamma_total = cost_gamma_total
+        self.cost_jpi_index = cost_jpi_index
         self.class_weights = class_weights
 
         self.matcher = HungarianMatcher(
             cost_class,
             cost_energy,
-            cost_gamma_total
+            cost_gamma_total,
+            cost_jpi_index
         )
 
     def prepare_targets(self, targets):
@@ -192,6 +210,7 @@ class DETR_Loss(nn.Module):
         class_targets = targets['class']
         energy_targets = targets['energy']
         gamma_total_targets = targets['gamma_total']
+        jpi_index_targets = targets['jpi_index']
 
         _targets = []
 
@@ -204,7 +223,8 @@ class DETR_Loss(nn.Module):
             _targets.append({
                 'class': torch.ones(mask.sum().item(), dtype=torch.long),
                 'energy': energy_targets[n][mask],
-                'gamma_total': gamma_total_targets[n][mask]
+                'gamma_total': gamma_total_targets[n][mask],
+                'jpi_index': jpi_index_targets[n][mask]
             })
 
         return _targets
@@ -220,6 +240,7 @@ class DETR_Loss(nn.Module):
         loss_class = 0.0
         loss_energy = 0.0
         loss_gamma_total = 0.0
+        loss_jpi_index = 0.0
 
         for n in range(N):
 
@@ -247,33 +268,39 @@ class DETR_Loss(nn.Module):
                     preds['gamma_total'][n][pred_idx],
                     targets[n]['gamma_total'][target_idx].float().to(device, non_blocking=True)
                 )
+
+                loss_jpi_index += F.cross_entropy(
+                    preds['jpi_index'][n][pred_idx],
+                    targets[n]['jpi_index'][target_idx].squeeze(1).long().to(device, non_blocking=True)
+                )
             
         loss_class /= N
         loss_energy /= N
-
-        total = self.cost_class * loss_class + self.cost_energy * loss_energy
-
         loss_gamma_total /= N
-        total += self.cost_gamma_total * loss_gamma_total
+        loss_jpi_index /= N
+
+        total = self.cost_class * loss_class + self.cost_energy * loss_energy + self.cost_gamma_total * loss_gamma_total + self.cost_jpi_index * loss_jpi_index
 
         loss = {
             'total_loss': total, # can't call .item() because we run .backward() on this in train
             'class_loss': loss_class.item(),
             'energy_loss': loss_energy.item(),
-            'gamma_total_loss': loss_gamma_total.item()
+            'gamma_total_loss': loss_gamma_total.item(),
+            'jpi_index_loss': loss_jpi_index.item()
         }
 
         return loss
 
 class HungarianMatcher(nn.Module):
 
-    def __init__(self, cost_class, cost_energy, cost_gamma_total):
+    def __init__(self, cost_class, cost_energy, cost_gamma_total, cost_jpi_index):
 
         super().__init__()
 
         self.cost_class = cost_class
         self.cost_energy = cost_energy
         self.cost_gamma_total = cost_gamma_total
+        self.cost_jpi_index = cost_jpi_index
 
     @torch.no_grad()
     def forward(self, preds, targets):
@@ -285,6 +312,7 @@ class HungarianMatcher(nn.Module):
             target_class = targets[n]['class']
             target_energy = targets[n]['energy']
             target_gamma_total = targets[n]['gamma_total']
+            target_jpi_index = targets[n]['jpi_index']
 
             n_objects = target_class.size(0)
 
@@ -326,6 +354,15 @@ class HungarianMatcher(nn.Module):
             cost_gamma_total = torch.cdist(pred_gamma_total, target_gamma_total, p=1)
 
             cost += self.cost_gamma_total * cost_gamma_total
+
+            # jpi index
+            pred_jpi_index = preds['jpi_index'][n]
+            target_jpi_index = target_jpi_index.squeeze(1).long().to(pred_jpi_index.device)
+
+            pred_jpi_probs = pred_jpi_index.softmax(-1)  # [n_queries, n_jpi]
+            cost_jpi_index = -pred_jpi_probs[:, target_jpi_index]  # [n_queries, n_objects]
+
+            cost += self.cost_jpi_index * cost_jpi_index
 
             # Hungarian algorithm
             cost = cost.cpu().numpy()

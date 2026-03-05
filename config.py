@@ -24,8 +24,8 @@ class Config(Enum):
     def get_key(self):
         return self.key
 
-    def get_model(self):
-        return self.model()
+    def get_model(self, header):
+        return self.model(header)
         
     def get_transform(self):
         return self.transform

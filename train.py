@@ -12,7 +12,13 @@ from datetime import datetime
 from model.detr import DETR_Model
 from header import Header
 
-train_stats = ['total_loss', 'class_loss', 'energy_loss', 'gamma_total_loss']
+train_stats = [
+    'total_loss',
+    'class_loss',
+    'energy_loss',
+    'gamma_total_loss',
+    'jpi_index_loss'
+]
 
 def run_epoch(n_epoch, model, loader, _target, is_eval, optimiser, device):
 
@@ -62,9 +68,6 @@ def run_epoch(n_epoch, model, loader, _target, is_eval, optimiser, device):
 def train(params):
 
     seed = params['seed']
-
-    header_name = params['header']
-    header = Header(filename=header_name)
     
     max_resonances = params['max_resonances']
     data.MAX_RESONANCES = max_resonances
@@ -76,9 +79,12 @@ def train(params):
     lr = params['lr']
     weight_decay = params['weight_decay']
     epoch_n_print = params['epoch_n_print']
+
+    header_name = params['header']
+    header = Header(filename=header_name)
     
     config = Config.from_key(params['config'])
-    model = config.get_model()
+    model = config.get_model(header)
     transform = config.get_transform()
     target = config.get_target()
 

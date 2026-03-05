@@ -2,7 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 
-def plot_results(path, title, out_path, subtitle=None):
+def plot_results(path, title, out_path):
 
     df = pd.read_csv(path)
 
@@ -10,10 +10,6 @@ def plot_results(path, title, out_path, subtitle=None):
 
     fig = plt.figure(figsize=(11, 9))
     fig.suptitle(title, fontsize=14, fontweight="bold", y=0.98)
-
-    if subtitle:
-        fig.text(0.5, 0.94, subtitle, ha="center", fontsize=10, color="gray")
-        
     gs = gridspec.GridSpec(2, 2, figure=fig, hspace=0.35, wspace=0.3, top=0.91)
 
     # loss

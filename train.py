@@ -143,7 +143,8 @@ def train(params):
     results['val_precision'] = []
     results['val_recall'] = []
 
-    print('Starting training...\n')
+    t_start = datetime.now()
+    print(f'Started training at {t_start.strftime("%Y-%m-%d %H:%M:%S")}\n')
 
     for epoch in range(1, n_epochs + 1):
 
@@ -175,6 +176,10 @@ def train(params):
                 f'| Recall {recall:.4f}\n'
             )
 
+    t_end = datetime.now()
+    duration = t_end - t_start
+    print(f'Training finished at {t_end.strftime("%Y-%m-%d %H:%M:%S")} (total: {str(duration).split(".")[0]}).')
+
     # save results
     run_name = params.get('run_name', '')
     run_id = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{params['config']}"
@@ -182,6 +187,10 @@ def train(params):
         run_id += f"_{run_name}"
     run_dir = os.path.join('out', 'runs', run_id)
     os.makedirs(run_dir, exist_ok=True)
+
+    params['t_start'] = t_start.strftime('%Y-%m-%d %H:%M:%S')
+    params['t_end'] = t_end.strftime('%Y-%m-%d %H:%M:%S')
+    params['duration_s'] = int(duration.total_seconds())
 
     with open(os.path.join(run_dir, 'params.json'), 'w') as f:
         json.dump(params, f, indent=4)

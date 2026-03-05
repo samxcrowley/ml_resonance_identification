@@ -144,12 +144,14 @@ def get_xs_ys(points):
 class ResonanceDataset(Dataset):
 
     # accepts preprocessed .pt files only
-    def __init__(self, path, transform=None):
+    def __init__(self, path, crop_strength, transform=None):
             
         saved = torch.load(path, weights_only=False)
 
         self.tensors = saved['tensors']
         self.targets = saved['targets']
+
+        self.crop_strength = crop_strength
 
         self.transform = transform
 
@@ -159,9 +161,12 @@ class ResonanceDataset(Dataset):
     def __getitem__(self, idx):
 
         tensor = self.tensors[idx]
+        target = {key: self.targets[key][idx] for key in self.targets}
+
         if self.transform:
             tensor = self.transform(tensor)
 
-        target = {key: self.targets[key][idx] for key in self.targets}
+        # crop
+        tensor, target = transforms._crop(tensor, target, self.crop_strength)
 
         return tensor, target

@@ -82,6 +82,8 @@ def train(params):
 
     header_name = params['header']
     header = Header(filename=header_name)
+
+    crop_strength = params['crop_strength']
     
     config = Config.from_key(params['config'])
     model = config.get_model(header)
@@ -93,7 +95,7 @@ def train(params):
 
     path = f'data/preprocessed/nlevels_{max_resonances}.pt'
 
-    dataset = data.ResonanceDataset(path, transform=transform)
+    dataset = data.ResonanceDataset(path, crop_strength, transform)
 
     # -1 in params['n_subset'] indicates to use the entire dataset
     if n_subset != -1:
@@ -106,7 +108,7 @@ def train(params):
                                      [train_size, val_size], \
                                         generator=torch.Generator().manual_seed(seed))
 
-    print(f'Data loaded, maximum resonances is {data.MAX_RESONANCES}.')
+    print(f'Data loaded with max. crop strength {crop_strength}\nMaximum resonances: {data.MAX_RESONANCES}')
     print(f'Training size: {len(train_dataset)}')
     print(f'Validation size: {len(val_dataset)}\n')
     

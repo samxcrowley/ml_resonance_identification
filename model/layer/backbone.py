@@ -4,12 +4,12 @@ import torchvision.models
 
 class Backbone(nn.Module):
 
-    def __init__(self, d_backbone, d_transformer):
+    def __init__(self, d_backbone, d_transformer, n_in_channels=2):
 
         super().__init__()
 
         self.conv1 = nn.Sequential(
-            nn.Conv2d(1, 32, kernel_size=5, stride=(1, 2), padding=2),
+            nn.Conv2d(n_in_channels, 32, kernel_size=5, stride=(1, 2), padding=2),
             nn.BatchNorm2d(32),
             nn.ReLU()
         )

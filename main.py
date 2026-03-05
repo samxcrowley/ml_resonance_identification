@@ -6,7 +6,9 @@ from process.plotting import plot_results
 with open('training_params.json', 'r') as f:
     params = json.load(f)
 
-print(f'Config `{params["config"]}` loaded.\n')
+print(f'\nConfig `{params["config"]}` loaded.\n')
+
+print(f'Starting run `{params["run_name"]}`.\n')
 
 run_id = train.train(params)
 

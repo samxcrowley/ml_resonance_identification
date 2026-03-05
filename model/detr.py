@@ -105,7 +105,7 @@ class DETR_Model(nn.Module):
 
     def get_optimiser(self, lr, weight_decay):
 
-        optimiser = torch.optim.AdamW(lr=lr, weight_decay=weight_decay)
+        optimiser = torch.optim.AdamW(self.parameters(), lr=lr, weight_decay=weight_decay)
 
         return optimiser
 

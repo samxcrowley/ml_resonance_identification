@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 
@@ -49,19 +50,33 @@ def plot_results(path, title, out_path):
     plt.close(fig)
 
 # display a cross-section sample with red lines at each resonance energy
+# tensor shape: [2, H, W] where channel 0 is data and channel 1 is the visibility mask
 def display_tensor_with_targets(tensor, target, name):
 
+    data = tensor[0].numpy()
+    mask = tensor[1].numpy()
+
     plt.figure(figsize=(10, 6))
-    plt.imshow(tensor.numpy(), cmap='viridis', aspect='auto', origin='lower')
+
+    # data with target lines and cropped region highlighted
+    plt.imshow(data, cmap='viridis', aspect='auto', origin='lower', interpolation='nearest')
     plt.colorbar()
 
-    n_energy = tensor.shape[0]
+    # overlay cropped pixels
+    cropped_overlay = np.zeros((*data.shape, 4))
+    cropped_overlay[mask == 0] = [0, 0, 0, 1]
+    plt.imshow(cropped_overlay, aspect='auto', origin='lower', interpolation='nearest')
 
+    n_energy = data.shape[0]
     for energy in target['energy']:
         y = energy * n_energy
-        plt.axhline(y=y, color='red', linestyle=':')
+        plt.axhline(y=y, color='white', linestyle=':')
 
+    plt.title('Data (black = cropped)')
+
+    plt.tight_layout()
     plt.savefig(f'out/tensor/{name}')
+    plt.close()
 
 # display a tensor of shape [H, W]
 def display_tensor(tensor, name):

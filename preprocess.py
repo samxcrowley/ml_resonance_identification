@@ -11,7 +11,7 @@ def preprocess(max_resonances):
     pattern = f'*nlevel_{max_resonances}*'
     output_path = f'data/preprocessed/nlevels_{max_resonances}.pt'
 
-    files = sorted(glob.glob(os.path.join('data', pattern)))
+    files = sorted(glob.glob(os.path.join('data/raw', pattern)))
 
     if not files:
         print(f'No files with pattern {pattern}')

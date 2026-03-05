@@ -13,7 +13,7 @@ run_id = train.train(params)
 run_dir = os.path.join('out', 'runs', run_id)
 
 subtitle = (
-    f"max_resonances={params['max_resonances']}"
+    f'max_resonances={params["max_resonances"]}'
 )
 
 plot_results(

@@ -48,10 +48,23 @@ def plot_results(path, title, out_path):
 
     plt.close(fig)
 
+# display a cross-section sample with red lines at each resonance energy
+def display_tensor_with_targets(tensor, target, name):
+
+    plt.figure(figsize=(10, 6))
+    plt.imshow(tensor.numpy(), cmap='viridis', aspect='auto', origin='lower')
+    plt.colorbar()
+
+    n_energy = tensor.shape[0]
+
+    for energy in target['energy']:
+        y = energy * n_energy
+        plt.axhline(y=y, color='red', linestyle=':')
+
+    plt.savefig(f'out/tensor/{name}')
+
 # display a tensor of shape [H, W]
 def display_tensor(tensor, name):
-
-    tensor = tensor.permute(1, 0)
 
     plt.figure(figsize=(10, 6))
     plt.imshow(tensor.numpy(), cmap='viridis', aspect='auto')

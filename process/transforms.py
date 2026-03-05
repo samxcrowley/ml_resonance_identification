@@ -4,9 +4,12 @@ import torchvision.transforms
 import data
 import numpy as np
 
-def _detr_transform(sobel=True):
+def _detr_transform(sobel=True, noise_sigma_log10=0.0):
 
     ls = []
+
+    if noise_sigma_log10 > 0.0:
+        ls.append(_lambda(lambda x: _add_noise(x, noise_sigma_log10)))
 
     if sobel:
         ls.append(_lambda(lambda x: _sobel(x)))
@@ -99,6 +102,12 @@ def _crop(tensor, target, strength=0.0):
     cropped_target['n_res'] = torch.tensor(n_kept, dtype=target['n_res'].dtype)
 
     return cropped_tensor, cropped_target
+
+# Gaussian noise in log10 space, approx. lognormal multiplicative
+# noise in linear
+# reasonable range is 0.05-0.2
+def _add_noise(tensor, noise_sigma_log10):
+    return tensor + torch.randn_like(tensor) * noise_sigma_log10
 
 def _lambda(foo, flag=True):
     return torchvision.transforms.Lambda(foo if flag else (lambda x: x))

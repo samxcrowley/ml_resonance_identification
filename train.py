@@ -61,7 +61,10 @@ def run_epoch(n_epoch, model, loader, _target, is_eval, optimiser, device):
 def train(params):
 
     seed = params['seed']
+    
     max_resonances = params['max_resonances']
+    data.MAX_RESONANCES = max_resonances
+
     n_subset = params['n_subset']
     num_workers = params['num_workers']
     batch_size = params['batch_size']

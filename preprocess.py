@@ -5,6 +5,8 @@ import sys
 import torch
 import data
 
+target_keys = ['class', 'energy', 'gamma_total', 'jpi_index', 'n_res']
+
 # combine and preprocess multiple .gz files into one .pt file
 def preprocess(max_resonances):
 
@@ -20,30 +22,23 @@ def preprocess(max_resonances):
     print(f'Found {len(files)} files.\n')
 
     all_tensors = []
-    all_targets = {k: [] for k in ['class', 'energy', 'gamma_total', 'n_res']}
+    all_targets = {k: [] for k in target_keys}
 
     for i, filepath in enumerate(files):
 
         print(f'[{i+1}/{len(files)}] {os.path.basename(filepath)}', flush=True)
 
         raw_data = data.open_data_file(filepath)
-        tensors_list, targets = data.process_json(raw_data)
+        tensors_list, file_targets = data.process_json(raw_data)
 
         all_tensors.extend(tensors_list)
 
-        all_targets['class'].append(targets['class'])
-        all_targets['energy'].append(targets['energy'])
-        all_targets['gamma_total'].append(targets['gamma_total'])
-        all_targets['n_res'].append(targets['n_res'])
+        for k in target_keys:
+            all_targets[k].append(file_targets[k])
 
     all_tensors = torch.stack(all_tensors)
 
-    combined_targets = {
-        'class': torch.cat(all_targets['class'], dim=0),
-        'energy': torch.cat(all_targets['energy'], dim=0),
-        'gamma_total': torch.cat(all_targets['gamma_total'], dim=0),
-        'n_res': torch.cat(all_targets['n_res'], dim=0),
-    }
+    combined_targets = {k: torch.cat(all_targets[k], dim=0) for k in target_keys}
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     torch.save({'tensors': all_tensors, 'targets': combined_targets}, output_path)

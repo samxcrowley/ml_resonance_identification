@@ -170,7 +170,10 @@ def train(params):
             )
 
     # save results
+    run_name = params.get('run_name', '')
     run_id = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{params['config']}"
+    if run_name:
+        run_id += f"_{run_name}"
     run_dir = os.path.join('out', 'runs', run_id)
     os.makedirs(run_dir, exist_ok=True)
 

@@ -13,7 +13,7 @@ from model.detr import DETR_Model
 
 train_stats = ['total_loss', 'class_loss', 'energy_loss', 'gamma_total_loss']
 
-def run_epoch(model, loader, _target, is_eval, optimiser, device):
+def run_epoch(n_epoch, model, loader, _target, is_eval, optimiser, device):
 
     if is_eval:
         model.eval()
@@ -134,8 +134,8 @@ def train(params):
 
     for epoch in range(1, n_epochs + 1):
 
-        train_m = run_epoch(model, train_loader, target, False, optimiser, device)
-        val_m = run_epoch(model, val_loader, target, True, optimiser, device)
+        train_m = run_epoch(epoch, model, train_loader, target, False, optimiser, device)
+        val_m = run_epoch(epoch, model, val_loader, target, True, optimiser, device)
 
         scheduler.step(val_m['total_loss'])
 

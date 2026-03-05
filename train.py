@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
+from torch.amp import autocast
 from torch.utils.data import DataLoader, random_split, Subset
 from process import data
 from process.config import Config
@@ -20,7 +21,7 @@ train_stats = [
     'jpi_index_loss'
 ]
 
-def run_epoch(n_epoch, model, loader, _target, is_eval, optimiser, device):
+def run_epoch(n_epoch, model, loader, _target, is_eval, optimiser, device, use_amp=False):
 
     if is_eval:
         model.eval()
@@ -32,16 +33,16 @@ def run_epoch(n_epoch, model, loader, _target, is_eval, optimiser, device):
     for stat in train_stats:
         stats[stat] = 0.0
 
+    loss_fn = _target.get_loss_fn()
+
     for tensor, targets in loader:
 
         tensor = tensor.to(device, non_blocking=True)
-        
-        preds = model(tensor)
 
-        targets = _target.get_targets(targets)
-
-        loss_fn = _target.get_loss_fn()
-        loss = loss_fn(preds, targets)
+        with autocast(device_type='cuda', dtype=torch.bfloat16, enabled=use_amp):
+            preds = model(tensor)
+            targets = _target.get_targets(targets)
+            loss = loss_fn(preds, targets)
 
         if not is_eval:
             optimiser.zero_grad()
@@ -51,8 +52,6 @@ def run_epoch(n_epoch, model, loader, _target, is_eval, optimiser, device):
 
         for stat in loss.keys():
 
-            # TODO: this is a quick workaround as total_loss is returned as a tensor
-            # so that we can call .backward() on it
             if stat == 'total_loss':
                 stats[stat] += loss[stat].item() * tensor.size(0)
             else:
@@ -79,12 +78,14 @@ def train(params):
     lr = params['lr']
     weight_decay = params['weight_decay']
     epoch_n_print = params['epoch_n_print']
+    use_amp = params.get('use_amp', False)
+    eval_every_n = params.get('eval_every_n', 1)
 
     header_name = params['header']
     header = Header(filename=header_name)
 
-    crop_strength = params['crop_strength']
-    
+    crop_schedule = params.get('crop_schedule', [[1, 0.0]])
+
     config = Config.from_key(params['config'])
     model = config.get_model(header)
     transform = config.get_transform()
@@ -95,11 +96,12 @@ def train(params):
 
     path = f'data/preprocessed/nlevels_{max_resonances}.pt'
 
-    dataset = data.ResonanceDataset(path, crop_strength, transform)
+    base_dataset = data.ResonanceDataset(path, crop_schedule[0][1], transform)
+    dataset = base_dataset
 
     # -1 in params['n_subset'] indicates to use the entire dataset
     if n_subset != -1:
-        dataset = Subset(dataset, np.arange(n_subset))
+        dataset = Subset(base_dataset, np.arange(n_subset))
 
     train_size = int(0.8 * len(dataset))
     val_size = len(dataset) - train_size
@@ -108,7 +110,7 @@ def train(params):
                                      [train_size, val_size], \
                                         generator=torch.Generator().manual_seed(seed))
 
-    print(f'Data loaded with max. crop strength {crop_strength}\nMaximum resonances: {data.MAX_RESONANCES}')
+    print(f'Data loaded with crop schedule {crop_schedule}\nMaximum resonances: {data.MAX_RESONANCES}')
     print(f'Training size: {len(train_dataset)}')
     print(f'Validation size: {len(val_dataset)}\n')
     
@@ -144,14 +146,22 @@ def train(params):
 
     results['val_precision'] = []
     results['val_recall'] = []
+    results['crop_strength'] = []
 
     t_start = datetime.now()
     print(f'Started training at {t_start.strftime("%Y-%m-%d %H:%M:%S")}\n')
 
     for epoch in range(1, n_epochs + 1):
 
-        train_m = run_epoch(epoch, model, train_loader, target, False, optimiser, device)
-        val_m = run_epoch(epoch, model, val_loader, target, True, optimiser, device)
+        # crop schedule
+        current_crop = crop_schedule[0][1]
+        for sched_epoch, sched_strength in crop_schedule:
+            if epoch >= sched_epoch:
+                current_crop = sched_strength
+        base_dataset.crop_strength = current_crop
+
+        train_m = run_epoch(epoch, model, train_loader, target, False, optimiser, device, use_amp)
+        val_m = run_epoch(epoch, model, val_loader, target, True, optimiser, device, use_amp)
 
         scheduler.step(val_m['total_loss'])
 
@@ -161,13 +171,18 @@ def train(params):
             results[f'train_{stat}'].append(train_m[stat])
             results[f'val_{stat}'].append(val_m[stat])
 
-        # evaluate model statistics
-
-        evaluate_m = model.evaluate(loader=val_loader, device=device)
-        precision = evaluate_m["precision"]
-        recall = evaluate_m["recall"]
+        # evaluate precision/recall every eval_every_n epochs
+        if epoch % eval_every_n == 0 or epoch == n_epochs:
+            evaluate_m = model.evaluate(loader=val_loader, device=device)
+            precision = evaluate_m["precision"]
+            recall = evaluate_m["recall"]
+        else:
+            precision = results['val_precision'][-1] if results['val_precision'] else 0.0
+            recall = results['val_recall'][-1] if results['val_recall'] else 0.0
+            
         results['val_precision'].append(precision)
         results['val_recall'].append(recall)
+        results['crop_strength'].append(current_crop)
 
         if epoch % epoch_n_print == 0:
             print(
@@ -175,7 +190,8 @@ def train(params):
                 f'| Train loss {train_m["total_loss"]:.4f} '
                 f'| Val loss {val_m["total_loss"]:.4f} '
                 f'| Precision {precision:.4f} '
-                f'| Recall {recall:.4f}\n'
+                f'| Recall {recall:.4f} '
+                f'| Crop {current_crop:.2f}\n'
             )
 
     t_end = datetime.now()

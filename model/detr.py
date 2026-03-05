@@ -22,7 +22,6 @@ class DETR_Model(nn.Module):
         n_layers=6,
         dropout_p=0.0,
         n_queries=data.MAX_RESONANCES,
-        n_class_targets=2,
         max_len=1000,
         freeze_backbone=False):
 
@@ -65,7 +64,7 @@ class DETR_Model(nn.Module):
 
         self.class_head = nn.Linear(
             d_transformer,
-            n_class_targets
+            2
         )
 
         self.energy_head = nn.Sequential(
@@ -123,7 +122,7 @@ class DETR_Model(nn.Module):
 
         return optimiser
 
-    def evaluate(self, loader, device, energy_tolerance=0.05):
+    def evaluate(self, loader, device, energy_tolerance=0.01):
 
         self.eval()
 

@@ -10,6 +10,7 @@ import json
 import os
 from datetime import datetime
 from model.detr import DETR_Model
+from header import Header
 
 train_stats = ['total_loss', 'class_loss', 'energy_loss', 'gamma_total_loss']
 
@@ -61,6 +62,9 @@ def run_epoch(n_epoch, model, loader, _target, is_eval, optimiser, device):
 def train(params):
 
     seed = params['seed']
+
+    header_name = params['header']
+    header = Header(filename=header_name)
     
     max_resonances = params['max_resonances']
     data.MAX_RESONANCES = max_resonances
@@ -96,7 +100,7 @@ def train(params):
                                      [train_size, val_size], \
                                         generator=torch.Generator().manual_seed(seed))
 
-    print('Data loaded.')
+    print(f'Data loaded, maximum resonances is {data.MAX_RESONANCES}.')
     print(f'Training size: {len(train_dataset)}')
     print(f'Validation size: {len(val_dataset)}\n')
     

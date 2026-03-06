@@ -64,16 +64,10 @@ def _crop(tensor, target, strength=0.0):
     e_idx_start = int(e_start * E)
     e_idx_end = int(e_end * E)
 
-    # pick a block of angles to crop out
-    A_crop_n = np.random.randint(0, A)
-    A_crop_start = np.random.randint(0, A - A_crop_n + 1)
-    A_crop_end = A_crop_start + A_crop_n
-
     # build spatial mask
     # 0: cropped
     # 1: valid
     mask = torch.ones(E, A)
-    mask[e_idx_start:e_idx_end, A_crop_start:A_crop_end] = 0.0
     mask[:e_idx_start, :] = 0.0
     mask[e_idx_end:, :] = 0.0
 

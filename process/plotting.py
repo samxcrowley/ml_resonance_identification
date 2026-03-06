@@ -67,7 +67,6 @@ def display_tensor_with_targets(tensor, target, name):
 
     plt.figure(figsize=(10, 6))
 
-    # data with target lines and cropped region highlighted
     plt.imshow(data, cmap='viridis', aspect='auto', origin='lower', interpolation='nearest')
     plt.colorbar()
 
@@ -79,7 +78,7 @@ def display_tensor_with_targets(tensor, target, name):
     n_energy = data.shape[0]
     for energy in target['energy']:
         y = energy * n_energy
-        plt.axhline(y=y, color='white', linestyle=':')
+        plt.axhline(y=y, color='red', linestyle=':')
 
     plt.title('Data (black = cropped)')
 

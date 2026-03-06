@@ -3,7 +3,7 @@ import glob
 import os
 import sys
 import torch
-import data
+import process.data as data
 
 target_keys = ['class', 'energy', 'gamma_total', 'jpi_index', 'n_res']
 

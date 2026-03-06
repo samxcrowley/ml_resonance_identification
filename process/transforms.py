@@ -95,9 +95,6 @@ def _crop(tensor, target, strength=0.0):
         pad_shape = (max_resonances - n_kept, *filtered.shape[1:])
         cropped_target[k] = torch.cat([filtered, torch.zeros(pad_shape, dtype=filtered.dtype)], dim=0)
 
-    # re-normalise energy
-    cropped_target['energy'][:n_kept] = (cropped_target['energy'][:n_kept] - e_start) / (e_end - e_start)
-
     # mark padded slots as no-resonance in class target
     cropped_target['class'][n_kept:, 0] = 1.0
 

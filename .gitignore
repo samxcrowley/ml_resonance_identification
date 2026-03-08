@@ -4,6 +4,8 @@ testing.py
 venv/
 data/
 out/
+fewbody-base/
+fewbody-rmatrix/
 
 todo.txt
 notes.txt

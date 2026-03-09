@@ -11,7 +11,7 @@ class Config(Enum):
     DETR = (
         'detr',
         DETR_Model,
-        transforms._detr_transform(sobel=False),
+        transforms._detr_transform(),
         Target.DETR
     )
 
@@ -27,7 +27,11 @@ class Config(Enum):
     def get_model(self, header, params):
         return self.model(header, params)
         
-    def get_transform(self):
+    def get_transform(self, inference=False):
+        
+        if inference:
+            return transforms._detr_transform(noise_sigma_log10=0.0)
+
         return self.transform
 
     def get_target(self):

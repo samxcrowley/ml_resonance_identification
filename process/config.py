@@ -11,7 +11,7 @@ class Config(Enum):
     DETR = (
         'detr',
         DETR_Model,
-        transforms._detr_transform(sobel=True),
+        transforms._detr_transform(sobel=False),
         Target.DETR
     )
 

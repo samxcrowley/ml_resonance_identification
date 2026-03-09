@@ -4,17 +4,12 @@ import torchvision.transforms
 import process.data as data
 import numpy as np
 
-def _detr_transform(sobel=True, noise_sigma_log10=0.1):
+def _detr_transform(noise_sigma_log10=0.1):
 
     ls = []
 
-    # if noise_sigma_log10 > 0.0:
-    #     ls.append(_lambda(lambda x: _add_noise(x, noise_sigma_log10)))
-
-    if sobel:
-        ls.append(_lambda(lambda x: _sobel(x)))
-
-    # ls.append(_lambda(lambda x: _unsqueeze(x, dim=0)))
+    if noise_sigma_log10 > 0.0:
+        ls.append(_lambda(lambda x: _add_noise(x, noise_sigma_log10)))
 
     transform = torchvision.transforms.Compose(ls)
 

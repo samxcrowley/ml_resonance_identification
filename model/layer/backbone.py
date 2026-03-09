@@ -4,7 +4,7 @@ import torchvision.models
 
 class Backbone(nn.Module):
 
-    def __init__(self, d_backbone, d_transformer, n_in_channels=2):
+    def __init__(self, d_transformer, n_in_channels=2):
 
         super().__init__()
 

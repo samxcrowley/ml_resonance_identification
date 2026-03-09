@@ -18,7 +18,6 @@ class DETR_Model(nn.Module):
 
         super().__init__()
 
-        self.d_backbone = params['d_backbone']
         self.d_transformer = params['d_transformer']
         self.n_hidden = params['n_hidden']
         self.n_head = params['n_head']
@@ -32,7 +31,6 @@ class DETR_Model(nn.Module):
         self.pos_enc_max_len = 1000
 
         self.backbone = backbone.Backbone(
-            d_backbone=self.d_backbone,
             d_transformer=self.d_transformer
         )
 

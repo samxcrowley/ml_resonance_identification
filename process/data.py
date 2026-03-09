@@ -3,6 +3,7 @@ import json
 import multiprocessing
 import numpy as np
 import pandas as pd
+from scipy.interpolate import griddata
 import torch
 from torch.utils.data import Dataset
 import matplotlib.pyplot as plt
@@ -13,45 +14,13 @@ MAX_RESONANCES = 20
 
 # x, y are the axes and z is the value at each point
 x_key = 'theta_3_cm'
-y_key = 'cn_ex'
+y_key = 'ke_cm_in'
 z_key = 'dsdO'
 
-# process loaded JSON list into (tensors [ls], targets [dict])
-def process_json(data):
-
-    tensors = get_tensors_from_json(data)
-    targets = get_targets_from_json(data)
-
-    return tensors, targets
-
-# process a loaded JSON list into a list of tensors
-def get_tensors_from_json(data):
+# process loaded JSON list into (tensors [list], targets [dict])
+def process_json(data, n_x=6, n_y=512, clamp=1e-8):
 
     tensors = []
-
-    for sample in data:
-
-        points = sample['observable_sets'][0]['points']
-
-        xs, ys = get_xs_ys(points)
-
-        x_idx = {x: i for i, x in enumerate(xs)}
-        y_idx = {y: i for i, y in enumerate(ys)}
-
-        tensor = torch.zeros(len(ys), len(xs))
-
-        for p in points:
-            z = np.log10(max(p[z_key], 1e-30))
-            x = x_idx[p[x_key]]
-            y = y_idx[p[y_key]]
-            tensor[y, x] = z
-
-        tensors.append(tensor)
-
-    return tensors
-
-# process a loaded JSON list into stacked target tensors
-def get_targets_from_json(data):
 
     class_targets = []
     energy_targets = []
@@ -59,44 +28,62 @@ def get_targets_from_json(data):
     n_res_targets = []
     jpi_index_targets = []
 
+    energies = []
+
     for sample in data:
 
         points = sample['observable_sets'][0]['points']
 
-        xs, ys = get_xs_ys(points)
+        # load tensor
 
-        n_resonances = len(sample['levels'])
+        energies.append([p[y_key] for p in points])
+
+        xs_raw = np.array([p[x_key] for p in points])
+        ys_raw = np.array([p[y_key] for p in points])
+        zs_raw = np.array([np.log10(max(p[z_key], clamp)) for p in points])
+
+        y_min = ys_raw.min()
+        y_max = ys_raw.max()
+
+        xs_uniform = np.linspace(xs_raw.min(), xs_raw.max(), n_x)
+        ys_uniform = np.linspace(y_min, y_max, n_y)
+
+        grid_x, grid_y = np.meshgrid(xs_uniform, ys_uniform)
+
+        grid_z = griddata((xs_raw, ys_raw), zs_raw, (grid_x, grid_y), method='linear')
+        grid_z = np.nan_to_num(grid_z, nan=np.log10(clamp))
+
+        tensors.append(torch.tensor(grid_z, dtype=torch.float32))
+        
+        # load targets
 
         class_target = torch.zeros([MAX_RESONANCES, 2], dtype=torch.float32)
         energy_target = torch.zeros([MAX_RESONANCES, 1], dtype=torch.float32)
-        gamma_total_target = torch.zeros([MAX_RESONANCES, 1], dtype=torch.
-        float32)
+        gamma_total_target = torch.zeros([MAX_RESONANCES, 1], dtype=torch.float32)
         jpi_index_target = torch.zeros([MAX_RESONANCES, 1], dtype=torch.float32)
+
+        # filter to only resonances within the data energy range
+        levels = [l for l in sample['levels'] if y_min <= l['energy'] <= y_max]
+        n_resonances = len(levels)
 
         for n in range(n_resonances):
 
-            level = sample['levels'][n]
+            level = levels[n]
 
-            # normalise energy
+            # normalise energy to [0, 1] relative to the uniform grid range
             energy = level['energy']
-            energy = transforms._normalise(energy, min(ys), max(ys))
+            energy = transforms._normalise(energy, y_min, y_max)
             energy_target[n] = energy
 
             # sum gammas and take the log
-            gamma_total = 0.0
-            gammas = level['Gamma']
-            for gamma in gammas:
-                gamma_total += gamma
-            gamma_total = np.log10(max(gamma_total, 1e-30))
+            gamma_total = sum(level['Gamma'])
+            gamma_total = np.log10(max(gamma_total, clamp))
             gamma_total_target[n] = gamma_total
 
             # jpi set index
-            jpi_index = level['jpi_index']
-            jpi_index_target[n] = jpi_index
+            jpi_index_target[n] = level['jpi_index']
 
-        # fill classes
-        # index 0: no resonance
-        # index 1: resonance
+        # fill classes: index 0 = no resonance, index 1 = resonance
         for n in range(MAX_RESONANCES):
             if n < n_resonances:
                 class_target[n, 1] = 1.0
@@ -107,11 +94,10 @@ def get_targets_from_json(data):
         energy_targets.append(energy_target)
         gamma_total_targets.append(gamma_total_target)
         jpi_index_targets.append(jpi_index_target)
-
         n_res_norm = transforms._normalise(n_resonances, 0, MAX_RESONANCES)
         n_res_targets.append(n_res_norm)
 
-    return {
+    targets = {
         'class': torch.stack(class_targets),
         'energy': torch.stack(energy_targets),
         'gamma_total': torch.stack(gamma_total_targets),
@@ -119,28 +105,7 @@ def get_targets_from_json(data):
         'n_res': torch.tensor(n_res_targets, dtype=torch.float32),
     }
 
-def open_data_file(path):
-
-    if path.endswith('gz'):
-        with gzip.open(path, 'rb') as f:
-            json_bytes = f.read()
-            json_str = json_bytes.decode()
-            data = json.loads(json_str)
-    elif path.endswith('json'):
-        with open(path, 'r') as f:
-            data = json.load(f)
-    else:
-        print('Invalid data file type.')
-        return None
-
-    return data
-
-def get_xs_ys(points):
-
-    xs = sorted(set(p[x_key] for p in points))
-    ys = sorted(set(p[y_key] for p in points))
-
-    return xs, ys
+    return tensors, targets
 
 class ResonanceDataset(Dataset):
 
@@ -180,3 +145,19 @@ class ResonanceDataset(Dataset):
             tensor = self.transform(tensor)
 
         return tensor, target
+
+def open_data_file(path):
+
+    if path.endswith('gz'):
+        with gzip.open(path, 'rb') as f:
+            json_bytes = f.read()
+            json_str = json_bytes.decode()
+            data = json.loads(json_str)
+    elif path.endswith('json'):
+        with open(path, 'r') as f:
+            data = json.load(f)
+    else:
+        print('Invalid data file type.')
+        return None
+
+    return data

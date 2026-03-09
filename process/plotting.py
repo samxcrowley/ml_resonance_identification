@@ -75,12 +75,14 @@ def display_tensor_with_targets(tensor, target, name):
     cropped_overlay[mask == 0] = [0, 0, 0, 1]
     plt.imshow(cropped_overlay, aspect='auto', origin='lower', interpolation='nearest')
 
+    # draw resonance lines
     n_energy = data.shape[0]
-    for energy in target['energy']:
-        y = energy * n_energy
-        plt.axhline(y=y, color='red', linestyle=':')
+    for n in range(target['class'].shape[0]):
+        if target['class'][n, 1] == 1.0:
+            y = target['energy'][n] * n_energy
+            plt.axhline(y=y, color='red', linestyle=':')
 
-    plt.title('Data (black = cropped)')
+    plt.title('Cross Sectiom')
 
     plt.tight_layout()
     plt.savefig(f'out/tensor/{name}')
@@ -90,7 +92,7 @@ def display_tensor_with_targets(tensor, target, name):
 def display_tensor(tensor, name):
 
     plt.figure(figsize=(10, 6))
-    plt.imshow(tensor.numpy(), cmap='viridis', aspect='auto')
+    plt.imshow(tensor[0].numpy(), cmap='viridis', origin='lower', interpolation='nearest', aspect='auto')
     plt.colorbar()
     plt.savefig(f'out/tensor/{name}')
 

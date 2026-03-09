@@ -1,6 +1,5 @@
 import gzip
 import json
-import multiprocessing
 import numpy as np
 import pandas as pd
 from scipy.interpolate import griddata
@@ -110,25 +109,14 @@ def process_json(data, n_x=6, n_y=512, clamp=1e-8):
 class ResonanceDataset(Dataset):
 
     # accepts preprocessed .pt files only
-    def __init__(self, path, crop_strength, transform=None):
+    def __init__(self, path, do_crop=false, transform=None):
 
         saved = torch.load(path, weights_only=False)
 
         self.tensors = saved['tensors']
         self.targets = saved['targets']
-
-        # shared memory so persistent DataLoader workers see updates
-        self._crop_strength = multiprocessing.Value('d', crop_strength)
-
+        self.do_crop = do_crop
         self.transform = transform
-
-    @property
-    def crop_strength(self):
-        return self._crop_strength.value
-
-    @crop_strength.setter
-    def crop_strength(self, value):
-        self._crop_strength.value = value
 
     def __len__(self):
         return len(self.tensors)
@@ -139,8 +127,10 @@ class ResonanceDataset(Dataset):
         target = {key: self.targets[key][idx] for key in self.targets}
 
         # crop
-        tensor, target = transforms._crop(tensor, target, self.crop_strength)
+        if self.do_crop:
+            tensor, target = transforms._crop(tensor, target, np.random.rand() * 0.75)
 
+        # initial transform
         if self.transform:
             tensor = self.transform(tensor)
 

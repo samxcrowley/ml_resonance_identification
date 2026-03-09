@@ -84,7 +84,7 @@ def train(params):
     header_name = params['header']
     header = Header(filename=header_name)
 
-    crop_schedule = params.get('crop_schedule', [[1, 0.0]])
+    do_crop = params.get('do_crop', False)
 
     config = Config.from_key(params['config'])
     model = config.get_model(header)
@@ -96,7 +96,7 @@ def train(params):
 
     path = f'data/preprocessed/nlevels_{max_resonances}.pt'
 
-    base_dataset = data.ResonanceDataset(path, crop_schedule[0][1], transform)
+    base_dataset = data.ResonanceDataset(path, do_crop, transform)
     dataset = base_dataset
 
     # -1 in params['n_subset'] indicates to use the entire dataset
@@ -110,7 +110,7 @@ def train(params):
                                      [train_size, val_size], \
                                         generator=torch.Generator().manual_seed(seed))
 
-    print(f'Data loaded with crop schedule {crop_schedule}\nMaximum resonances: {data.MAX_RESONANCES}')
+    print(f'Data loaded with {data.MAX_RESONANCES} maximum resonances.')
     print(f'Training size: {len(train_dataset)}')
     print(f'Validation size: {len(val_dataset)}\n')
     
@@ -146,19 +146,11 @@ def train(params):
 
     results['val_precision'] = []
     results['val_recall'] = []
-    results['crop_strength'] = []
 
     t_start = datetime.now()
     print(f'Started training at {t_start.strftime("%Y-%m-%d %H:%M:%S")}\n')
 
     for epoch in range(1, n_epochs + 1):
-
-        # crop schedule
-        current_crop = crop_schedule[0][1]
-        for sched_epoch, sched_strength in crop_schedule:
-            if epoch >= sched_epoch:
-                current_crop = sched_strength
-        base_dataset.crop_strength = current_crop
 
         train_m = run_epoch(epoch, model, train_loader, target, False, optimiser, device, use_amp)
         val_m = run_epoch(epoch, model, val_loader, target, True, optimiser, device, use_amp)
@@ -182,7 +174,6 @@ def train(params):
             
         results['val_precision'].append(precision)
         results['val_recall'].append(recall)
-        results['crop_strength'].append(current_crop)
 
         if epoch % epoch_n_print == 0:
             print(
@@ -190,8 +181,7 @@ def train(params):
                 f'| Train loss {train_m["total_loss"]:.4f} '
                 f'| Val loss {val_m["total_loss"]:.4f} '
                 f'| Precision {precision:.4f} '
-                f'| Recall {recall:.4f} '
-                f'| Crop {current_crop:.2f}\n'
+                f'| Recall {recall:.4f}'
             )
 
     t_end = datetime.now()

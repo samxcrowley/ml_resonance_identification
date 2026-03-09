@@ -89,7 +89,7 @@ def train(params):
     max_crop = params.get('max_crop', False)
 
     config = Config.from_key(params['config'])
-    model = config.get_model(header)
+    model = config.get_model(header, params)
     transform = config.get_transform()
     target = config.get_target()
 

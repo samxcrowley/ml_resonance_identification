@@ -14,12 +14,9 @@ import json
 
 class DETR_Model(nn.Module):
 
-    def __init__(self, header, params_file='detr_params.json'):
+    def __init__(self, header, params):
 
         super().__init__()
-
-        with open(params_file, 'r') as f:
-            params = json.load(f)
 
         self.d_backbone = params['d_backbone']
         self.d_transformer = params['d_transformer']

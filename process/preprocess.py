@@ -8,12 +8,23 @@ import process.data as data
 target_keys = ['class', 'energy', 'gamma_total', 'jpi_index', 'n_res']
 
 # combine and preprocess multiple .gz files into one .pt file
-def preprocess(max_resonances):
+def preprocess(max_resonances, n_samples, training=True):
 
-    pattern = f'*nlevel_{max_resonances}*'
-    output_path = f'data/preprocessed/nlevels_{max_resonances}.pt'
+    if training:
 
-    files = sorted(glob.glob(os.path.join('data/raw', pattern)))
+        pattern = f'*training_nlevel_{max_resonances}_n_{n_samples}*'
+
+        files = sorted(glob.glob(os.path.join('data/raw/training', pattern)))
+
+        output_path = f'data/preprocessed/training/nlevels_{max_resonances}_n_{n_samples}_training.pt'
+
+    else:
+
+        pattern = f'*testing_nlevel_{max_resonances}_n_{n_samples}*'
+
+        files = sorted(glob.glob(os.path.join('data/raw/testing', pattern)))
+
+        output_path = f'data/preprocessed/testing/nlevels_{max_resonances}_n_{n_samples}_testing.pt'
 
     if not files:
         print(f'No files with pattern {pattern}')
@@ -49,4 +60,7 @@ def preprocess(max_resonances):
 if __name__ == '__main__':
 
     max_resonances = sys.argv[1]
-    preprocess(max_resonances)
+    n_samples = sys.argv[2]
+    training = (sys.argv[3] == 'train')
+
+    preprocess(max_resonances, n_samples, training)

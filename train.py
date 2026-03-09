@@ -68,6 +68,8 @@ def train(params):
 
     seed = params['seed']
 
+    data_path = params['data_path']
+
     max_resonances = params['max_resonances']
     data.MAX_RESONANCES = max_resonances
 
@@ -84,7 +86,7 @@ def train(params):
     header_name = params['header']
     header = Header(filename=header_name)
 
-    do_crop = params.get('do_crop', False)
+    max_crop = params.get('max_crop', False)
 
     config = Config.from_key(params['config'])
     model = config.get_model(header)
@@ -94,9 +96,7 @@ def train(params):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f'Using device: {device}\n')
 
-    path = f'data/preprocessed/nlevels_{max_resonances}.pt'
-
-    base_dataset = data.ResonanceDataset(path, do_crop, transform)
+    base_dataset = data.ResonanceDataset(data_path, max_crop, transform)
     dataset = base_dataset
 
     # -1 in params['n_subset'] indicates to use the entire dataset
@@ -111,6 +111,7 @@ def train(params):
                                         generator=torch.Generator().manual_seed(seed))
 
     print(f'Data loaded with {data.MAX_RESONANCES} maximum resonances.')
+    print(f'Maximum cropping strength of {max_crop} per sample.')
     print(f'Training size: {len(train_dataset)}')
     print(f'Validation size: {len(val_dataset)}\n')
     

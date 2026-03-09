@@ -10,6 +10,7 @@ fewbody-rmatrix/
 todo.txt
 notes.txt
 
+params/
 *_params.json
 
 *.pyc

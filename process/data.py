@@ -109,13 +109,13 @@ def process_json(data, n_x=6, n_y=512, clamp=1e-8):
 class ResonanceDataset(Dataset):
 
     # accepts preprocessed .pt files only
-    def __init__(self, path, do_crop=false, transform=None):
+    def __init__(self, path, max_crop=0.0, transform=None):
 
         saved = torch.load(path, weights_only=False)
 
         self.tensors = saved['tensors']
         self.targets = saved['targets']
-        self.do_crop = do_crop
+        self.max_crop = max_crop
         self.transform = transform
 
     def __len__(self):
@@ -127,8 +127,7 @@ class ResonanceDataset(Dataset):
         target = {key: self.targets[key][idx] for key in self.targets}
 
         # crop
-        if self.do_crop:
-            tensor, target = transforms._crop(tensor, target, np.random.rand() * 0.75)
+        tensor, target = transforms._crop(tensor, target, np.random.rand() * self.max_crop)
 
         # initial transform
         if self.transform:

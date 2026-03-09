@@ -1,9 +1,14 @@
 import train
 import json
 import os
+import sys
 from process.plotting import plot_results
 
-with open('training_params.json', 'r') as f:
+params_file = 'training_params.json'
+if len(sys.argv) == 2:
+    params_file = sys.argv[1]
+
+with open(params_file, 'r') as f:
     params = json.load(f)
 
 print(f'\nConfig `{params["config"]}` loaded.\n')

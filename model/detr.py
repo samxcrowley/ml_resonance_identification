@@ -189,7 +189,7 @@ class DETR_Model(nn.Module):
 
 class DETR_Loss(nn.Module):
 
-    def __init__( self, params_file='detr_params.json'):
+    def __init__(self, params_file='detr_params.json'):
 
         super().__init__()
 

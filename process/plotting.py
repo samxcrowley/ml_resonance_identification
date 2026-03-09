@@ -82,7 +82,7 @@ def display_tensor_with_targets(tensor, target, name):
             y = target['energy'][n] * n_energy
             plt.axhline(y=y, color='red', linestyle=':')
 
-    plt.title('Cross Sectiom')
+    plt.title('Cross Section')
 
     plt.tight_layout()
     plt.savefig(f'out/tensor/{name}')

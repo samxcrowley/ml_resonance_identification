@@ -127,7 +127,7 @@ def print_results(results):
     print(f'J^pi Accuracy: {results["jpi_accuracy"]:.4f}')
     print(f'\nTotal true: {results["total_true"]}')
     print(f'True positives: {results["total_tp"]}')
-    print(f'False positives:{results["total_fp"]}')
+    print(f'False positives: {results["total_fp"]}')
 
 if __name__ == '__main__':
 

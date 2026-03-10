@@ -2,6 +2,7 @@ import argparse
 import glob
 import os
 import sys
+import tempfile
 import time
 from concurrent.futures import ProcessPoolExecutor
 import torch
@@ -20,7 +21,12 @@ def _process_file(filepath):
     tensors_list, file_targets = data.process_json(raw_data)
     t_proc = time.time() - t0
 
-    return os.path.basename(filepath), tensors_list, file_targets, t_load, t_proc
+    # save to temp file to avoid large IPC transfers
+    tmp = tempfile.NamedTemporaryFile(suffix='.pt', delete=False)
+    torch.save({'tensors': tensors_list, 'targets': file_targets}, tmp.name)
+    tmp.close()
+
+    return os.path.basename(filepath), tmp.name, t_load, t_proc
 
 # combine and preprocess multiple .gz files into one .pt file
 def preprocess(max_resonances, n_sets, training=True, workers=None):
@@ -48,22 +54,25 @@ def preprocess(max_resonances, n_sets, training=True, workers=None):
 
     with ProcessPoolExecutor(max_workers=workers) as pool:
 
-        for name, tensors_list, file_targets, t_load, t_proc in tqdm(
+        for name, tmp_path, t_load, t_proc in tqdm(
             pool.map(_process_file, files), total=n_files, desc='Files', unit='file'
         ):
 
             tqdm.write(f'{name}: load={t_load:.1f}s, process={t_proc:.1f}s')
 
-            all_tensors.extend(tensors_list)
+            result = torch.load(tmp_path, weights_only=False)
+            os.unlink(tmp_path)
+
+            all_tensors.extend(result['tensors'])
 
             for k in target_keys:
-                all_targets[k].append(file_targets[k])
+                all_targets[k].append(result['targets'][k])
 
     all_tensors = torch.stack(all_tensors)
 
     combined_targets = {k: torch.cat(all_targets[k], dim=0) for k in target_keys}
 
-    n_samples = n_sets * n_files
+    n_samples = int(n_sets) * int(n_files)
 
     if training:
         output_path = f'data/preprocessed/training/nlevels_{max_resonances}_n_{n_samples}_training.pt'

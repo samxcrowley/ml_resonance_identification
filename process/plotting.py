@@ -41,18 +41,6 @@ def plot_results(path, title, out_path):
     ax_rec.set_ylabel("Recall")
     ax_rec.grid(True, alpha=0.3)
 
-    # crop strength schedule
-    if 'crop_strength' in df.columns:
-        ax_crop = fig.add_subplot(gs[0, 1])
-        ax_crop.plot(epochs, df['crop_strength'], color='tab:red')
-        ax_crop.set_title('Maximum Cropping Strength')
-        ax_crop.set_xlabel('Epoch')
-        ax_crop.set_ylabel('Maximum Strength')
-        ax_crop.set_ylim(0, max(df['crop_strength'].max() * 1.1, 0.1))
-        ax_crop.grid(True, alpha=0.3)
-    else:
-        fig.add_subplot(gs[0, 1]).set_visible(False)
-
     plt.savefig(out_path, dpi=150, bbox_inches="tight")
     print(f"Saved plots to {out_path}.")
 

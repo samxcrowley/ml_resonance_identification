@@ -134,7 +134,14 @@ def train(params):
     model.to(device)
 
     optimiser = model.get_optimiser(lr=lr, weight_decay=weight_decay)
-    
+
+    resume_from = params.get('resume_from', None)
+    if resume_from:
+        checkpoint = torch.load(resume_from, map_location=device, weights_only=True)
+        model.load_state_dict(checkpoint['model'])
+        optimiser.load_state_dict(checkpoint['optimiser'])
+        print(f'Resumed from {resume_from}\n')
+
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimiser, mode='min', factor=0.5, patience=5)
 
     results = {
@@ -153,6 +160,7 @@ def train(params):
 
     best_val_loss = float('inf')
     best_model_state = None
+    best_optimiser_state = None
 
     for epoch in range(1, n_epochs + 1):
 
@@ -183,6 +191,7 @@ def train(params):
         if val_m['total_loss'] < best_val_loss:
             best_val_loss = val_m['total_loss']
             best_model_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+            best_optimiser_state = optimiser.state_dict()
 
         if epoch % epoch_n_print == 0:
             print(
@@ -199,7 +208,7 @@ def train(params):
 
     # save results
     run_name = params.get('run_name', '')
-    run_id = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{params['config']}"
+    run_id = f"{datetime.now().strftime('%m%d_%H%M')}_{params['config']}"
     if run_name:
         run_id += f"_{run_name}"
     run_dir = os.path.join('out', 'runs', run_id)
@@ -216,7 +225,10 @@ def train(params):
     df = pd.DataFrame(results)
     df.to_csv(os.path.join(run_dir, 'results.csv'), index=False)
 
-    torch.save(best_model_state, os.path.join(run_dir, 'checkpoint.pt'))
+    torch.save({
+        'model': best_model_state,
+        'optimiser': best_optimiser_state,
+    }, os.path.join(run_dir, 'checkpoint.pt'))
 
     print(f'Results saved to {run_dir}.')
 

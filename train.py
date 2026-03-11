@@ -151,6 +151,9 @@ def train(params):
     t_start = datetime.now()
     print(f'Started training at {t_start.strftime("%Y-%m-%d %H:%M:%S")}\n')
 
+    best_val_loss = float('inf')
+    best_model_state = None
+
     for epoch in range(1, n_epochs + 1):
 
         train_m = run_epoch(epoch, model, train_loader, target, False, optimiser, device, use_amp)
@@ -172,9 +175,14 @@ def train(params):
         else:
             precision = results['val_precision'][-1] if results['val_precision'] else 0.0
             recall = results['val_recall'][-1] if results['val_recall'] else 0.0
-            
+
         results['val_precision'].append(precision)
         results['val_recall'].append(recall)
+
+        # track best model by val loss
+        if val_m['total_loss'] < best_val_loss:
+            best_val_loss = val_m['total_loss']
+            best_model_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
 
         if epoch % epoch_n_print == 0:
             print(
@@ -200,6 +208,7 @@ def train(params):
     params['t_start'] = t_start.strftime('%Y-%m-%d %H:%M:%S')
     params['t_end'] = t_end.strftime('%Y-%m-%d %H:%M:%S')
     params['duration_s'] = int(duration.total_seconds())
+    params['best_val_loss'] = best_val_loss
 
     with open(os.path.join(run_dir, 'params.json'), 'w') as f:
         json.dump(params, f, indent=4)
@@ -207,8 +216,8 @@ def train(params):
     df = pd.DataFrame(results)
     df.to_csv(os.path.join(run_dir, 'results.csv'), index=False)
 
-    torch.save(model.state_dict(), os.path.join(run_dir, 'model.pt'))
+    torch.save(best_model_state, os.path.join(run_dir, 'checkpoint.pt'))
 
-    print(f'\nResults saved to {run_dir}')
+    print(f'Results saved to {run_dir}.')
 
     return run_id

@@ -1,7 +1,6 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
-from torch.amp import autocast
 from torch.utils.data import DataLoader, random_split, Subset
 from process import data
 import process.transforms as transforms
@@ -25,7 +24,7 @@ train_stats = [
     'jpi_index_loss'
 ]
 
-def run_epoch(n_epoch, model, loader, loss_fn, is_eval, optimiser, device, use_amp=False):
+def run_epoch(n_epoch, model, loader, loss_fn, is_eval, optimiser, device):
 
     if is_eval:
         model.eval()
@@ -40,10 +39,9 @@ def run_epoch(n_epoch, model, loader, loss_fn, is_eval, optimiser, device, use_a
     for tensor, targets in loader:
 
         tensor = tensor.to(device, non_blocking=True)
+        preds = model(tensor)
 
-        with autocast(device_type='cuda', dtype=torch.bfloat16, enabled=use_amp):
-            preds = model(tensor)
-            loss = loss_fn(preds, targets)
+        loss = loss_fn(preds, targets)
 
         if not is_eval:
             optimiser.zero_grad()
@@ -77,7 +75,6 @@ def train(params):
     lr = params['lr']
     weight_decay = params['weight_decay']
     epoch_n_print = params['epoch_n_print']
-    use_amp = params.get('use_amp', False)
     eval_every_n = params.get('eval_every_n', 1)
 
     header_name = params['header']
@@ -187,8 +184,8 @@ def train(params):
 
     for epoch in range(1, n_epochs + 1):
 
-        train_m = run_epoch(epoch, model, train_loader, loss_fn, False, optimiser, device, use_amp)
-        val_m = run_epoch(epoch, model, val_loader, loss_fn, True, optimiser, device, use_amp)
+        train_m = run_epoch(epoch, model, train_loader, loss_fn, False, optimiser, device)
+        val_m = run_epoch(epoch, model, val_loader, loss_fn, True, optimiser, device)
 
         scheduler.step(val_m['total_loss'])
 

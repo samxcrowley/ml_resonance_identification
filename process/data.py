@@ -40,6 +40,12 @@ def process_json(data, n_y=512, clamp=1e-8):
         grid = np.full((n_y, n_channels), np.log10(clamp), dtype=np.float32)
 
         # index points by (pp_in, pp_out, angle) for fast lookup
+        # O(n_channels + n_points)
+        # instead of naive approach of looping over all channels
+        # and all points every time, and adding each -- O(n_channels * n_points)
+        # this approach scans through all points, which are universal to the
+        # channels and buckets them into a dict, then over all channels and
+        # looks them up in dict in O(1) time.
         point_groups = {}
         for p in points:
 
@@ -74,6 +80,7 @@ def process_json(data, n_y=512, clamp=1e-8):
 
                 ch_idx += 1
 
+        grid = np.nan_to_num(grid, nan=np.log10(clamp))
         tensors.append(torch.tensor(grid, dtype=torch.float32))
 
         # load targets

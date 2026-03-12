@@ -76,13 +76,51 @@ def display_tensor_with_targets(tensor, target, name):
     plt.savefig(f'out/tensor/{name}')
     plt.close()
 
-# display a tensor of shape [H, W]
+# display tensor as a heatmap with channels as columns
+# tensor shape: [n_y, n_channels]
 def display_tensor(tensor, name):
 
-    plt.figure(figsize=(10, 6))
-    plt.imshow(tensor[0].numpy(), cmap='viridis', origin='lower', interpolation='nearest', aspect='auto')
-    plt.colorbar()
+    grid = tensor.numpy()
+
+    plt.figure(figsize=(12, 6))
+    plt.imshow(grid, cmap='viridis', origin='lower', interpolation='nearest', aspect='auto')
+    plt.colorbar(label='log10(cross section)')
+    plt.xlabel('Channel')
+    plt.ylabel('Energy bin')
+    plt.title('Cross Section (all channels)')
+
+    plt.tight_layout()
     plt.savefig(f'out/tensor/{name}')
+    plt.close()
+
+# display tensor as a grid of line plots, one per channel
+# tensor shape: [n_y, n_channels] where n_channels = n_pp_combos * n_angles
+def display_tensor_grid(tensor, name, n_pp_combos=9, n_angles=6):
+
+    grid = tensor.numpy()
+    n_y = grid.shape[0]
+
+    fig, axes = plt.subplots(n_pp_combos, n_angles, figsize=(3 * n_angles, 2 * n_pp_combos),
+                             sharex=True, sharey=True)
+
+    for pp_idx in range(n_pp_combos):
+        for ang_idx in range(n_angles):
+
+            ch_idx = pp_idx * n_angles + ang_idx
+            ax = axes[pp_idx, ang_idx]
+            ax.plot(np.arange(n_y), grid[:, ch_idx], linewidth=0.8)
+
+            if pp_idx == 0:
+                ax.set_title(f'ang {ang_idx}', fontsize=8)
+            if ang_idx == 0:
+                ax.set_ylabel(f'pp {pp_idx}', fontsize=8)
+
+            ax.tick_params(labelsize=6)
+
+    fig.suptitle('Cross Section per Channel', fontsize=14)
+    plt.tight_layout()
+    plt.savefig(f'out/tensor/{name}', dpi=150)
+    plt.close()
 
 # display an RGB image
 def display_image(img, name):

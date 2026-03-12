@@ -1,23 +1,17 @@
 import gzip
 import json
 import numpy as np
-import pandas as pd
-from scipy.interpolate import griddata
 import torch
 from torch.utils.data import Dataset
-import matplotlib.pyplot as plt
 import process.transforms as transforms
 
 # set in params.json, default is 20
 MAX_RESONANCES = 20
 
-# x, y are the axes and z is the value at each point
-x_key = 'theta_3_cm'
-y_key = 'ke_cm_in'
-z_key = 'dsdO'
-
 # process loaded JSON list into (tensors [list], targets [dict])
-def process_json(data, n_x=6, n_y=512, clamp=1e-8):
+# tensor shape: [n_y, n_channels]
+# where n_channels = n_pp_combos * n_angles (for now, 9 * 6 = 54)
+def process_json(data, n_y=512, clamp=1e-8):
 
     tensors = []
 
@@ -27,62 +21,87 @@ def process_json(data, n_x=6, n_y=512, clamp=1e-8):
     n_res_targets = []
     jpi_index_targets = []
 
-    energies = []
-
     for sample in data:
 
         points = sample['observable_sets'][0]['points']
 
-        # load tensor
+        # get pp combinations and angles
+        pp_combos = sorted(set((p['pp_in_index'], p['pp_out_index']) for p in points))
+        angles = sorted(set(p['theta_3_cm'] for p in points))
 
-        energies.append([p[y_key] for p in points])
+        n_channels = len(pp_combos) * len(angles) # 54
 
-        xs_raw = np.array([p[x_key] for p in points])
-        ys_raw = np.array([p[y_key] for p in points])
-        zs_raw = np.array([np.log10(max(p[z_key], clamp)) for p in points])
+        cn_ex_all = np.array([p['cn_ex'] for p in points])
+        e_min = cn_ex_all.min()
+        e_max = cn_ex_all.max()
+        e_uniform = np.linspace(e_min, e_max, n_y)
 
-        y_min = ys_raw.min()
-        y_max = ys_raw.max()
+        # build grid: 1D interpolation per (pp_in, pp_out, angle)
+        grid = np.full((n_y, n_channels), np.log10(clamp), dtype=np.float32)
 
-        xs_uniform = np.linspace(xs_raw.min(), xs_raw.max(), n_x)
-        ys_uniform = np.linspace(y_min, y_max, n_y)
+        # index points by (pp_in, pp_out, angle) for fast lookup
+        point_groups = {}
+        for p in points:
 
-        grid_x, grid_y = np.meshgrid(xs_uniform, ys_uniform)
+            key = (p['pp_in_index'], p['pp_out_index'], p['theta_3_cm'])
 
-        grid_z = griddata((xs_raw, ys_raw), zs_raw, (grid_x, grid_y), method='linear')
-        grid_z = np.nan_to_num(grid_z, nan=np.log10(clamp))
+            if key not in point_groups:
+                point_groups[key] = ([], [])
 
-        tensors.append(torch.tensor(grid_z, dtype=torch.float32))
-        
+            point_groups[key][0].append(p['cn_ex'])
+            point_groups[key][1].append(np.log10(max(p['dsdO'], clamp)))
+
+        ch_idx = 0
+        for pp_in, pp_out in pp_combos:
+            for angle in angles:
+
+                key = (pp_in, pp_out, angle)
+
+                if key in point_groups:
+
+                    e = np.array(point_groups[key][0])
+                    z = np.array(point_groups[key][1])
+
+                    order = np.argsort(e)
+
+                    grid[:, ch_idx] = np.interp(
+                        e_uniform,
+                        e[order],
+                        z[order],
+                        left=np.log10(clamp),
+                        right=np.log10(clamp)
+                    )
+
+                ch_idx += 1
+
+        tensors.append(torch.tensor(grid, dtype=torch.float32))
+
         # load targets
-
         class_target = torch.zeros([MAX_RESONANCES, 2], dtype=torch.float32)
         energy_target = torch.zeros([MAX_RESONANCES, 1], dtype=torch.float32)
         gamma_total_target = torch.zeros([MAX_RESONANCES, 1], dtype=torch.float32)
         jpi_index_target = torch.zeros([MAX_RESONANCES, 1], dtype=torch.float32)
 
-        # filter to only resonances within the data energy range
-        levels = [l for l in sample['levels'] if y_min <= l['energy'] <= y_max]
+        # filter to only resonances within the energy range
+        levels = [l for l in sample['levels'] if e_min <= l['energy'] <= e_max]
         n_resonances = len(levels)
 
         for n in range(n_resonances):
 
             level = levels[n]
 
-            # normalise energy to [0, 1] relative to the uniform grid range
             energy = level['energy']
-            energy = transforms._normalise(energy, y_min, y_max)
+            energy = transforms._normalise(energy, e_min, e_max)
             energy_target[n] = energy
 
-            # sum gammas and take the log
             gamma_total = sum(level['Gamma'])
             gamma_total = np.log10(max(gamma_total, clamp))
             gamma_total_target[n] = gamma_total
 
-            # jpi set index
             jpi_index_target[n] = level['jpi_index']
 
-        # fill classes: index 0 = no resonance, index 1 = resonance
+        # fill classes
+        # index 0 = no resonance, index 1 = resonance
         for n in range(MAX_RESONANCES):
             if n < n_resonances:
                 class_target[n, 1] = 1.0

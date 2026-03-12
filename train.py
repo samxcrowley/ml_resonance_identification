@@ -110,11 +110,16 @@ def train(params):
                                      [train_size, val_size], \
                                         generator=torch.Generator().manual_seed(seed))
 
+    uncropped_val_dataset = data.ResonanceDataset(data_path, 0.0, config.get_transform(inference=True))
+    if n_subset != -1:
+        uncropped_val_dataset = Subset(uncropped_val_dataset, np.arange(n_subset))
+    uncropped_val_dataset = Subset(uncropped_val_dataset, val_dataset.indices)
+
     print(f'Data loaded with {data.MAX_RESONANCES} maximum resonances.')
     print(f'Maximum cropping strength of {max_crop} per sample.')
     print(f'Training size: {len(train_dataset)}')
     print(f'Validation size: {len(val_dataset)}\n')
-    
+
     train_loader = DataLoader(train_dataset,
                               batch_size=batch_size,
                               shuffle=True,
@@ -122,7 +127,7 @@ def train(params):
                               pin_memory=True,
                               persistent_workers=True,
                               prefetch_factor=4)
-    
+
     val_loader = DataLoader(val_dataset,
                             batch_size=batch_size,
                             shuffle=False,
@@ -130,6 +135,14 @@ def train(params):
                             pin_memory=True,
                             persistent_workers=True,
                             prefetch_factor=4)
+
+    uncropped_val_loader = DataLoader(uncropped_val_dataset,
+                                     batch_size=batch_size,
+                                     shuffle=False,
+                                     num_workers=num_workers,
+                                     pin_memory=True,
+                                     persistent_workers=True,
+                                     prefetch_factor=4)
 
     model.to(device)
 
@@ -140,6 +153,8 @@ def train(params):
         checkpoint = torch.load(resume_from, map_location=device, weights_only=True)
         model.load_state_dict(checkpoint['model'])
         optimiser.load_state_dict(checkpoint['optimiser'])
+        for pg in optimiser.param_groups:
+            pg['lr'] = lr
         print(f'Resumed from {resume_from}\n')
 
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimiser, mode='min', factor=0.5, patience=5)
@@ -154,6 +169,8 @@ def train(params):
 
     results['val_precision'] = []
     results['val_recall'] = []
+    results['val_uncropped_precision'] = []
+    results['val_uncropped_recall'] = []
 
     t_start = datetime.now()
     print(f'Started training at {t_start.strftime("%Y-%m-%d %H:%M:%S")}\n')
@@ -177,15 +194,29 @@ def train(params):
 
         # evaluate precision/recall every eval_every_n epochs
         if epoch % eval_every_n == 0 or epoch == n_epochs:
+
             evaluate_m = model.evaluate(loader=val_loader, device=device)
+
             precision = evaluate_m["precision"]
             recall = evaluate_m["recall"]
+
+            uc_evaluate_m = model.evaluate(loader=uncropped_val_loader, device=device)
+
+            uc_precision = uc_evaluate_m["precision"]
+            uc_recall = uc_evaluate_m["recall"]
+
         else:
+
             precision = results['val_precision'][-1] if results['val_precision'] else 0.0
             recall = results['val_recall'][-1] if results['val_recall'] else 0.0
+            
+            uc_precision = results['val_uncropped_precision'][-1] if results['val_uncropped_precision'] else 0.0
+            uc_recall = results['val_uncropped_recall'][-1] if results['val_uncropped_recall'] else 0.0
 
         results['val_precision'].append(precision)
         results['val_recall'].append(recall)
+        results['val_uncropped_precision'].append(uc_precision)
+        results['val_uncropped_recall'].append(uc_recall)
 
         # track best model by val loss
         if val_m['total_loss'] < best_val_loss:
@@ -198,8 +229,10 @@ def train(params):
                 f'Epoch {epoch}/{n_epochs} '
                 f'| Train loss {train_m["total_loss"]:.4f} '
                 f'| Val loss {val_m["total_loss"]:.4f} '
-                f'| Precision {precision:.4f} '
-                f'| Recall {recall:.4f}'
+                f'| Prec {precision:.4f} '
+                f'| Rec {recall:.4f} '
+                f'| UC Prec {uc_precision:.4f} '
+                f'| UC Rec {uc_recall:.4f}'
             )
 
     t_end = datetime.now()

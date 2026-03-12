@@ -4,6 +4,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 import process.transforms as transforms
+from process.header import Header
 
 # set in params.json, default is 20
 MAX_RESONANCES = 20
@@ -17,9 +18,12 @@ def process_json(data, n_y=512, clamp=1e-8):
 
     class_targets = []
     energy_targets = []
+    gamma_targets = []
     gamma_total_targets = []
     n_res_targets = []
     jpi_index_targets = []
+
+    header = Header()
 
     for sample in data:
 
@@ -86,6 +90,7 @@ def process_json(data, n_y=512, clamp=1e-8):
         # load targets
         class_target = torch.zeros([MAX_RESONANCES, 2], dtype=torch.float32)
         energy_target = torch.zeros([MAX_RESONANCES, 1], dtype=torch.float32)
+        gamma_target = torch.zeros([MAX_RESONANCES, header.max_channels], dtype=torch.float32)
         gamma_total_target = torch.zeros([MAX_RESONANCES, 1], dtype=torch.float32)
         jpi_index_target = torch.zeros([MAX_RESONANCES, 1], dtype=torch.float32)
 
@@ -100,6 +105,9 @@ def process_json(data, n_y=512, clamp=1e-8):
             energy = level['energy']
             energy = transforms._normalise(energy, e_min, e_max)
             energy_target[n] = energy
+
+            for i in range(len(level['Gamma'])):
+                gamma_target[n, i] = np.log10(max(level['Gamma'][i], clamp))
 
             gamma_total = sum(level['Gamma'])
             gamma_total = np.log10(max(gamma_total, clamp))
@@ -117,6 +125,7 @@ def process_json(data, n_y=512, clamp=1e-8):
 
         class_targets.append(class_target)
         energy_targets.append(energy_target)
+        gamma_targets.append(gamma_target)
         gamma_total_targets.append(gamma_total_target)
         jpi_index_targets.append(jpi_index_target)
         n_res_norm = transforms._normalise(n_resonances, 0, MAX_RESONANCES)
@@ -125,6 +134,7 @@ def process_json(data, n_y=512, clamp=1e-8):
     targets = {
         'class': torch.stack(class_targets),
         'energy': torch.stack(energy_targets),
+        'gamma': torch.stack(gamma_targets),
         'gamma_total': torch.stack(gamma_total_targets),
         'jpi_index': torch.stack(jpi_index_targets),
         'n_res': torch.tensor(n_res_targets, dtype=torch.float32),

@@ -9,7 +9,7 @@ import torch
 from tqdm import tqdm
 import process.data as data
 
-target_keys = ['class', 'energy', 'gamma_total', 'jpi_index', 'n_res']
+target_keys = ['class', 'energy', 'gamma', 'gamma_total', 'jpi_index', 'n_res']
 
 def _process_file(filepath):
 
@@ -35,7 +35,7 @@ def preprocess(max_resonances, workers=1, train_split=0.8):
     files = sorted(glob.glob(os.path.join(f'data/raw/', pattern)))
 
     if not files:
-        print(f'No files with pattern {pattern}')
+        print(f'No files with pattern {pattern}.')
         return
 
     n_files = len(files)
@@ -43,7 +43,7 @@ def preprocess(max_resonances, workers=1, train_split=0.8):
     if workers is None:
         workers = min(n_files, os.cpu_count() or 1)
 
-    print(f'\nFound {n_files} files. Processing with {workers} workers.\n')
+    print(f'\nFound {n_files} files. Processing with {workers} worker(s).\n')
 
     all_tensors = []
     all_targets = {k: [] for k in target_keys}

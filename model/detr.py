@@ -18,16 +18,21 @@ class DETR_Model(nn.Module):
 
         super().__init__()
 
+        self.header = header
+        self.params = params
+
         self.d_transformer = params['d_transformer']
         self.n_hidden = params['n_hidden']
         self.n_head = params['n_head']
         self.n_layers = params['n_layers']
         self.dropout_p = params['dropout_p']
         self.eval_tolerance = params['eval_tolerance']
-        self.confidence_threshold = params.get('confidence_threshold', 0.5)
+        self.confidence_threshold = params['confidence_threshold']
+
+        self.max_gammas = self.header.max_channels
 
         self.n_queries = data.MAX_RESONANCES*2
-        self.n_jpi_sets = header.n_jpi_sets
+        self.n_jpi_sets = self.header.n_jpi_sets
 
         self.pos_enc_max_len = 1000
 
@@ -61,11 +66,13 @@ class DETR_Model(nn.Module):
             self.d_transformer
         )
 
+        # classification
         self.class_head = nn.Linear(
             self.d_transformer,
             2
         )
 
+        # regression (MLP)
         self.energy_head = nn.Sequential(
             nn.Linear(self.d_transformer, self.d_transformer),
             nn.ReLU(),
@@ -75,6 +82,16 @@ class DETR_Model(nn.Module):
             nn.Sigmoid() # energy in [0, 1]
         )
 
+        # regression (MLP)
+        self.gamma_head = nn.Sequential(
+            nn.Linear(self.d_transformer, self.d_transformer),
+            nn.ReLU(),
+            nn.Linear(self.d_transformer, self.d_transformer),
+            nn.ReLU(),
+            nn.Linear(self.d_transformer, self.max_gammas)
+        )
+
+        # regression (MLP)
         self.gamma_total_head = nn.Sequential(
             nn.Linear(self.d_transformer, self.d_transformer),
             nn.ReLU(),
@@ -83,10 +100,14 @@ class DETR_Model(nn.Module):
             nn.Linear(self.d_transformer, 1)
         )
 
+        # classification
         self.jpi_index_head = nn.Linear(
             self.d_transformer,
             self.n_jpi_sets
         )
+
+    def get_loss_fn(self):
+        return DETR_Loss(self.header, self.params)
 
     def forward(self, x):
 
@@ -107,6 +128,7 @@ class DETR_Model(nn.Module):
         preds = {
             'class': self.class_head(out),
             'energy': self.energy_head(out),
+            'gamma': self.gamma_head(out),
             'gamma_total': self.gamma_total_head(out),
             'jpi_index': self.jpi_index_head(out)
         }
@@ -127,10 +149,12 @@ class DETR_Model(nn.Module):
         total_detected = 0
         total_false_positive = 0
 
-        loss_fn = DETR_Loss()
+        loss_fn = DETR_Loss(self.header, self.params)
+
         matcher = HungarianMatcher(
             cost_class=loss_fn.cost_class,
             cost_energy=loss_fn.cost_energy,
+            cost_gamma=loss_fn.cost_gamma,
             cost_gamma_total=loss_fn.cost_gamma_total,
             cost_jpi_index=loss_fn.cost_jpi_index
         )
@@ -185,22 +209,24 @@ class DETR_Model(nn.Module):
 
 class DETR_Loss(nn.Module):
 
-    def __init__(self, params_file='detr_params.json'):
+    def __init__(self, header, params):
 
         super().__init__()
 
-        with open(params_file, 'r') as f:
-            params = json.load(f)
+        self.header = header
+        self.params = params
 
-        self.cost_class = params['cost_class']
-        self.cost_energy = params['cost_energy']
-        self.cost_gamma_total = params['cost_gamma_total']
-        self.cost_jpi_index = params['cost_jpi_index']
-        self.class_weights = params['class_weights']
+        self.cost_class = self.params['cost_class']
+        self.cost_energy = self.params['cost_energy']
+        self.cost_gamma = self.params['cost_gamma']
+        self.cost_gamma_total = self.params['cost_gamma_total']
+        self.cost_jpi_index = self.params['cost_jpi_index']
+        self.class_weights = self.params['class_weights']
 
         self.matcher = HungarianMatcher(
             self.cost_class,
             self.cost_energy,
+            self.cost_gamma,
             self.cost_gamma_total,
             self.cost_jpi_index
         )
@@ -209,6 +235,7 @@ class DETR_Loss(nn.Module):
 
         class_targets = targets['class']
         energy_targets = targets['energy']
+        gamma_targets = targets['gamma']
         gamma_total_targets = targets['gamma_total']
         jpi_index_targets = targets['jpi_index']
 
@@ -223,6 +250,7 @@ class DETR_Loss(nn.Module):
             _targets.append({
                 'class': torch.ones(mask.sum().item(), dtype=torch.long),
                 'energy': energy_targets[n][mask],
+                'gamma': gamma_targets[n][mask],
                 'gamma_total': gamma_total_targets[n][mask],
                 'jpi_index': jpi_index_targets[n][mask]
             })
@@ -239,6 +267,7 @@ class DETR_Loss(nn.Module):
 
         loss_class = 0.0
         loss_energy = 0.0
+        loss_gamma = 0.0
         loss_gamma_total = 0.0
         loss_jpi_index = 0.0
 
@@ -264,6 +293,11 @@ class DETR_Loss(nn.Module):
                     targets[n]['energy'][target_idx].float().to(device, non_blocking=True)
                 )
 
+                loss_gamma += F.l1_loss(
+                    preds['gamma'][n][pred_idx],
+                    targets[n]['gamma'][target_idx].float().to(device, non_blocking=True)
+                )
+
                 loss_gamma_total += F.l1_loss(
                     preds['gamma_total'][n][pred_idx],
                     targets[n]['gamma_total'][target_idx].float().to(device, non_blocking=True)
@@ -276,15 +310,17 @@ class DETR_Loss(nn.Module):
             
         loss_class /= N
         loss_energy /= N
+        loss_gamma /= N
         loss_gamma_total /= N
         loss_jpi_index /= N
 
-        total = self.cost_class * loss_class + self.cost_energy * loss_energy + self.cost_gamma_total * loss_gamma_total + self.cost_jpi_index * loss_jpi_index
+        total = self.cost_class * loss_class + self.cost_energy * loss_energy + self.cost_gamma * loss_gamma + self.cost_gamma_total * loss_gamma_total + self.cost_jpi_index * loss_jpi_index
 
         loss = {
             'total_loss': total,
             'class_loss': loss_class,
             'energy_loss': loss_energy,
+            'gamma_loss': loss_gamma,
             'gamma_total_loss': loss_gamma_total,
             'jpi_index_loss': loss_jpi_index
         }
@@ -293,12 +329,13 @@ class DETR_Loss(nn.Module):
 
 class HungarianMatcher(nn.Module):
 
-    def __init__(self, cost_class, cost_energy, cost_gamma_total, cost_jpi_index):
+    def __init__(self, cost_class, cost_energy, cost_gamma, cost_gamma_total, cost_jpi_index):
 
         super().__init__()
 
         self.cost_class = cost_class
         self.cost_energy = cost_energy
+        self.cost_gamma = cost_gamma
         self.cost_gamma_total = cost_gamma_total
         self.cost_jpi_index = cost_jpi_index
 
@@ -311,6 +348,7 @@ class HungarianMatcher(nn.Module):
 
             target_class = targets[n]['class']
             target_energy = targets[n]['energy']
+            target_gamma = targets[n]['gamma']
             target_gamma_total = targets[n]['gamma_total']
             target_jpi_index = targets[n]['jpi_index']
 
@@ -347,6 +385,14 @@ class HungarianMatcher(nn.Module):
 
             cost += self.cost_energy * cost_energy
 
+            # gamma
+            pred_gamma = preds['gamma'][n]
+            target_gamma = target_gamma.to(pred_gamma.device)
+
+            cost_gamma = torch.cdist(pred_gamma, target_gamma, p=1)
+
+            cost += self.cost_gamma * cost_gamma
+
             # gamma_total
             pred_gamma_total = preds['gamma_total'][n]
             target_gamma_total = target_gamma_total.to(pred_gamma_total.device)
@@ -366,7 +412,6 @@ class HungarianMatcher(nn.Module):
 
             # Hungarian algorithm
             cost = cost.float().cpu().numpy()
-
             pred_idx, target_idx = linear_sum_assignment(cost)
 
             indices.append((

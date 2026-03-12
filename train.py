@@ -87,7 +87,12 @@ def train(params):
 
     model_cls = MODELS[params['model']]
     model = model_cls(header, params)
-    transform = transforms.get_augment_transform()
+
+    transform = transforms.get_augment_transform(
+        noise_sigma_log10=params.get('noise_sigma_log10', 0.1),
+        amplitude_scale=params.get('amplitude_scale', 0.2)
+    )
+
     loss_fn = DETR_Loss()
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

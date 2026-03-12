@@ -4,7 +4,7 @@ import torchvision.transforms
 import process.data as data
 import numpy as np
 
-def get_augment_transform(noise_sigma_log10=0.3, amplitude_scale=0.5):
+def get_augment_transform(noise_sigma_log10=0.1, amplitude_scale=0.2):
 
     ls = []
 

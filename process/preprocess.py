@@ -29,7 +29,7 @@ def _process_file(filepath):
     return os.path.basename(filepath), tmp.name, t_load, t_proc
 
 # combine and preprocess multiple .gz files into train and test .pt files
-def preprocess(max_resonances, workers=4, train_split=0.8, seed=22):
+def preprocess(max_resonances, workers=1, train_split=0.8):
 
     pattern = f'*nlevel_{max_resonances}*'
     files = sorted(glob.glob(os.path.join(f'data/raw/', pattern)))
@@ -54,7 +54,7 @@ def preprocess(max_resonances, workers=4, train_split=0.8, seed=22):
             pool.map(_process_file, files), total=n_files, desc='Files', unit='file'
         ):
 
-            tqdm.write(f'{name}: load={t_load:.1f}s, process={t_proc:.1f}s')
+            tqdm.write(f'{name}: load={t_load:.1f}, process={t_proc:.1f}s')
 
             result = torch.load(tmp_path, weights_only=False)
             os.unlink(tmp_path)
@@ -70,7 +70,7 @@ def preprocess(max_resonances, workers=4, train_split=0.8, seed=22):
 
     # shuffle and split into train/test sets
     n_total = len(all_tensors)
-    generator = torch.Generator().manual_seed(seed)
+    generator = torch.Generator().manual_seed(22)
     perm = torch.randperm(n_total, generator=generator)
 
     n_train = int(n_total * train_split)
@@ -100,4 +100,4 @@ if __name__ == '__main__':
 
     max_resonances = sys.argv[1]
 
-    preprocess(max_resonances, workers=4)
+    preprocess(max_resonances, workers=1)

@@ -32,7 +32,7 @@ def evaluate(run_dir, test_data_path, confidence_threshold=0.5):
     dataset = data.ResonanceDataset(test_data_path, 0.0, transform)
     loader = DataLoader(dataset, batch_size=64, shuffle=False)
 
-    loss_fn = DETR_Loss()
+    loss_fn = model.get_loss_fn()
     matcher = HungarianMatcher(
         cost_class=loss_fn.cost_class,
         cost_energy=loss_fn.cost_energy,
@@ -45,6 +45,7 @@ def evaluate(run_dir, test_data_path, confidence_threshold=0.5):
     total_true = 0
     total_tp = 0
     total_fp = 0
+    total_slots = 0
 
     energy_errors = []
     gamma_total_errors = []
@@ -71,6 +72,8 @@ def evaluate(run_dir, test_data_path, confidence_threshold=0.5):
 
                 confidences = preds['class'][n].softmax(-1)[:, 1]
                 n_confident = (confidences > confidence_threshold).sum().item()
+                n_queries = len(confidences)
+                total_slots += n_queries
 
                 true_counts.append(n_objects)
                 pred_counts.append(n_confident)
@@ -100,6 +103,9 @@ def evaluate(run_dir, test_data_path, confidence_threshold=0.5):
                     jpi_correct += (pred_jpi == target_jpi)[tp_mask].sum().item()
                     jpi_total += tp
 
+    total_fn = total_true - total_tp
+    total_tn = total_slots - total_tp - total_fp - total_fn
+
     precision = total_tp / (total_tp + total_fp) if (total_tp + total_fp) > 0 else 0.0
     recall = total_tp / total_true if total_true > 0 else 0.0
     energy_mae = torch.cat(energy_errors).mean().item() if energy_errors else float('nan')
@@ -116,6 +122,8 @@ def evaluate(run_dir, test_data_path, confidence_threshold=0.5):
         'total_true': total_true,
         'total_tp': total_tp,
         'total_fp': total_fp,
+        'total_fn': total_fn,
+        'total_tn': total_tn,
     }
 
     raw = {
@@ -138,29 +146,32 @@ def print_results(results):
     print(f'\nTotal true: {results["total_true"]}')
     print(f'True positives: {results["total_tp"]}')
     print(f'False positives: {results["total_fp"]}')
+    print(f'False negatives: {results["total_fn"]}')
+    print(f'True negatives: {results["total_tn"]}')
 
 def plot_results(results, raw, run_dir):
 
-    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+    fig, axes = plt.subplots(1, 3, figsize=(16, 5))
 
-    # energy error histogram
-    ax = axes[0, 0]
-    if len(raw['energy_errors']) > 0:
-        ax.hist(raw['energy_errors'], bins=50, edgecolor='black')
-    ax.set_xlabel('Absolute Energy Error')
-    ax.set_ylabel('Count')
-    ax.set_title(f'Energy Error Distribution (MAE={results["energy_mae"]:.6f})')
+    # confusion matrix
+    ax = axes[0]
+    ax.axis('off')
+    confusion_data = [
+        ['', 'Pred Positive', 'Pred Negative'],
+        ['Actual Positive', f'TP = {results["total_tp"]}', f'FN = {results["total_fn"]}'],
+        ['Actual Negative', f'FP = {results["total_fp"]}', f'TN = {results["total_tn"]}'],
+    ]
+    table = ax.table(cellText=confusion_data, loc='center', cellLoc='center')
+    table.auto_set_font_size(False)
+    table.set_fontsize(11)
+    table.scale(1, 2.0)
+    for (row, col), cell in table.get_celld().items():
+        if row == 0 or col == 0:
+            cell.set_text_props(fontweight='bold')
+    ax.set_title('Confusion Table')
 
-    # gamma_total error histogram
-    ax = axes[0, 1]
-    if len(raw['gamma_total_errors']) > 0:
-        ax.hist(raw['gamma_total_errors'], bins=50, edgecolor='black')
-    ax.set_xlabel('Absolute Gamma Total Error')
-    ax.set_ylabel('Count')
-    ax.set_title(f'Gamma Total Error Distribution (MAE={results["gamma_total_mae"]:.6f})')
-
-    # resonance count confusion matrix
-    ax = axes[1, 0]
+    # n_resonances confusion matrix
+    ax = axes[1]
     max_count = max(raw['true_counts'].max(), raw['pred_counts'].max()) + 1
     cm = np.zeros((max_count, max_count), dtype=int)
     for t, p in zip(raw['true_counts'], raw['pred_counts']):
@@ -178,8 +189,8 @@ def plot_results(results, raw, run_dir):
     ax.set_xticks(range(max_count))
     ax.set_yticks(range(max_count))
 
-    # summary metrics table
-    ax = axes[1, 1]
+    # metrics table
+    ax = axes[2]
     ax.axis('off')
     table_data = [
         ['Confidence threshold', f'{results["confidence_threshold"]:.2f}'],
@@ -187,18 +198,16 @@ def plot_results(results, raw, run_dir):
         ['Recall', f'{results["recall"]:.4f}'],
         ['Energy MAE', f'{results["energy_mae"]:.6f}'],
         ['Gamma MAE', f'{results["gamma_total_mae"]:.6f}'],
-        ['J^pi Accuracy', f'{results["jpi_accuracy"]:.4f}'],
-        ['True Positives', f'{results["total_tp"]}'],
-        ['False Positives', f'{results["total_fp"]}'],
-        ['Total True', f'{results["total_true"]}'],
+        ['J^pi Accuracy', f'{results["jpi_accuracy"]:.4f}']
     ]
     table = ax.table(cellText=table_data,
                      loc='center', cellLoc='left')
     table.auto_set_font_size(False)
     table.set_fontsize(11)
     table.scale(1, 1.4)
+    ax.set_title('Metrics')
 
-    fig.suptitle(f'Test Results (confidence threshold = {results["confidence_threshold"]:.2f})', fontsize=14)
+    fig.suptitle(f'Test Results (confidence threshold {results["confidence_threshold"]:.2f})', fontsize=14)
     plt.tight_layout()
     path = f'{run_dir}/test_results_threshold{confidence_threshold}.png'
     plt.savefig(path, dpi=150)
@@ -212,5 +221,7 @@ if __name__ == '__main__':
     confidence_threshold = float(sys.argv[3])
 
     results, raw = evaluate(run_dir, test_data_path, confidence_threshold)
+
     print_results(results)
+
     plot_results(results, raw, run_dir)

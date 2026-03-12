@@ -28,9 +28,9 @@ class Config(Enum):
         return self.model(header, params)
         
     def get_transform(self, inference=False):
-        
+
         if inference:
-            return transforms._detr_transform(noise_sigma_log10=0.0)
+            return transforms._detr_transform(noise_sigma_log10=0.0, amplitude_scale=0.0)
 
         return self.transform
 

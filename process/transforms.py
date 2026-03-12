@@ -4,12 +4,15 @@ import torchvision.transforms
 import process.data as data
 import numpy as np
 
-def _detr_transform(noise_sigma_log10=0.1):
+def _detr_transform(noise_sigma_log10=0.1, amplitude_scale=0.2):
 
     ls = []
 
     if noise_sigma_log10 > 0.0:
         ls.append(_lambda(lambda x: _add_noise(x, noise_sigma_log10)))
+
+    if amplitude_scale > 0.0:
+        ls.append(_lambda(lambda x: _amplitude_scale(x, amplitude_scale)))
 
     transform = torchvision.transforms.Compose(ls)
 
@@ -95,7 +98,18 @@ def _crop(tensor, target, strength=0.0):
 # noise in linear
 # reasonable range is 0.05-0.2
 def _add_noise(tensor, noise_sigma_log10):
-    return tensor + torch.randn_like(tensor) * noise_sigma_log10
+    # only add noise to data channel (index 0), not the mask (index 1)
+    noisy = tensor.clone()
+    noisy[0] = tensor[0] + torch.randn_like(tensor[0]) * noise_sigma_log10
+    return noisy
+
+# random additive offset in log10 space (multiplicative scale in linear)
+# simulates variation in overall cross-section magnitude
+def _amplitude_scale(tensor, max_scale):
+    offset = (torch.rand(1).item() * 2 - 1) * max_scale
+    scaled = tensor.clone()
+    scaled[0] = tensor[0] + offset
+    return scaled
 
 def _lambda(foo, flag=True):
     return torchvision.transforms.Lambda(foo if flag else (lambda x: x))

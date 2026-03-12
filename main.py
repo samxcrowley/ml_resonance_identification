@@ -22,5 +22,5 @@ run_dir = os.path.join('out', 'runs', run_id)
 plot_results(
     path=os.path.join(run_dir, 'results.csv'),
     title=run_id,
-    out_path=os.path.join(run_dir, 'plot.png')
+    out_path=os.path.join(run_dir, 'train_results.png')
 )

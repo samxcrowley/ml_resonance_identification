@@ -28,15 +28,11 @@ def _process_file(filepath):
 
     return os.path.basename(filepath), tmp.name, t_load, t_proc
 
-# combine and preprocess multiple .gz files into one .pt file
-def preprocess(max_resonances, n_sets, training=True, workers=None):
+# combine and preprocess multiple .gz files into train and test .pt files
+def preprocess(max_resonances, workers=4, train_split=0.8, seed=22):
 
-    if training:
-        pattern = f'*training_nlevel_{max_resonances}_n_{n_sets}*'
-        files = sorted(glob.glob(os.path.join('data/raw/training', pattern)))
-    else:
-        pattern = f'*testing_nlevel_{max_resonances}_n_{n_sets}*'
-        files = sorted(glob.glob(os.path.join('data/raw/testing', pattern)))
+    pattern = f'*nlevel_{max_resonances}*'
+    files = sorted(glob.glob(os.path.join(f'data/raw/', pattern)))
 
     if not files:
         print(f'No files with pattern {pattern}')
@@ -72,23 +68,36 @@ def preprocess(max_resonances, n_sets, training=True, workers=None):
 
     combined_targets = {k: torch.cat(all_targets[k], dim=0) for k in target_keys}
 
-    n_samples = int(n_sets) * int(n_files)
+    # shuffle and split into train/test sets
+    n_total = len(all_tensors)
+    generator = torch.Generator().manual_seed(seed)
+    perm = torch.randperm(n_total, generator=generator)
 
-    if training:
-        output_path = f'data/preprocessed/training/nlevels_{max_resonances}_n_{n_samples}_training.pt'
-    else:
-        output_path = f'data/preprocessed/testing/nlevels_{max_resonances}_n_{n_samples}_testing.pt'
+    n_train = int(n_total * train_split)
 
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    torch.save({'tensors': all_tensors, 'targets': combined_targets}, output_path)
+    train_idx = perm[:n_train]
+    test_idx = perm[n_train:]
 
-    print(f'\nDone. {len(all_tensors)} total samples saved to {output_path}')
-    print(f'Tensor shape: {all_tensors.shape}')
+    train_data = {
+        'tensors': all_tensors[train_idx],
+        'targets': {k: combined_targets[k][train_idx] for k in target_keys},
+    }
+    test_data = {
+        'tensors': all_tensors[test_idx],
+        'targets': {k: combined_targets[k][test_idx] for k in target_keys},
+    }
+
+    out_dir = 'data/preprocessed'
+    os.makedirs(out_dir, exist_ok=True)
+
+    train_path = os.path.join(out_dir, f'nlevels_{max_resonances}_train.pt')
+    test_path = os.path.join(out_dir, f'nlevels_{max_resonances}_test.pt')
+
+    torch.save(train_data, train_path)
+    torch.save(test_data, test_path)
 
 if __name__ == '__main__':
 
     max_resonances = sys.argv[1]
-    n_samples = sys.argv[2]
-    training = (sys.argv[3] == 'train')
 
-    preprocess(max_resonances, n_samples, training=training, workers=8)
+    preprocess(max_resonances, workers=4)

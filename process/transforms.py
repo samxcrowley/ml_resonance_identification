@@ -4,7 +4,7 @@ import torchvision.transforms
 import process.data as data
 import numpy as np
 
-def _detr_transform(noise_sigma_log10=0.1, amplitude_scale=0.2):
+def get_augment_transform(noise_sigma_log10=0.3, amplitude_scale=0.5):
 
     ls = []
 
@@ -18,31 +18,6 @@ def _detr_transform(noise_sigma_log10=0.1, amplitude_scale=0.2):
 
     return transform
 
-def _resnet_transform(sobel=False):
-
-    ls = []
-
-    ls.append(_lambda(lambda x: _normalise(x)))
-    if sobel:
-        ls.append(_lambda(lambda x: _sobel(x)))
-    ls.append(_lambda(lambda x: x.repeat(3, 1, 1)))
-    ls.append(torchvision.models.ResNet34_Weights.DEFAULT.transforms())
-
-    transform = torchvision.transforms.Compose(ls)
-
-    return transform
-
-def _encoder_transform(sobel=False):
-
-    ls = []
-
-    ls.append(_lambda(lambda x: _normalise(x)))
-    if sobel:
-        ls.append(_lambda(lambda x: _sobel(x)))
-
-    transform = torchvision.transforms.Compose(ls)
-
-    return transform
 
 def _crop(tensor, target, strength=0.0):
 
@@ -130,38 +105,3 @@ def _unsqueeze(x, dim):
 def _print_shape(x):
     print(x.shape)
     return x
-
-def _sobel(x):
-
-    Kx = torch.tensor([[-1, 0, 1],
-                        [-2, 0, 2],
-                        [-1, 0, 1]], dtype=torch.float32)
-    Ky = torch.tensor([[-1, -2, -1],
-                        [ 0,  0,  0],
-                        [ 1,  2,  1]], dtype=torch.float32)
-
-    has_mask = x.dim() == 3
-    if has_mask:
-        data_ch = x[0]
-        mask = x[1]
-    else:
-        data_ch = x
-
-    # [1, 1, E, A]
-    inp = data_ch.float().unsqueeze(0).unsqueeze(0)
-
-    # [1, 1, 3, 3]
-    Kx = Kx.unsqueeze(0).unsqueeze(0)
-    Ky = Ky.unsqueeze(0).unsqueeze(0)
-
-    Gx = F.conv2d(inp, Kx, padding=1)
-    Gy = F.conv2d(inp, Ky, padding=1)
-
-    magnitude = torch.sqrt(Gx**2 + Gy**2).squeeze()
-
-    if has_mask:
-        # zero out false edges at crop boundaries
-        magnitude = magnitude * mask
-        return torch.stack([magnitude, mask], dim=0)
-
-    return magnitude

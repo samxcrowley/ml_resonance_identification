@@ -281,11 +281,11 @@ class DETR_Loss(nn.Module):
         total = self.cost_class * loss_class + self.cost_energy * loss_energy + self.cost_gamma_total * loss_gamma_total + self.cost_jpi_index * loss_jpi_index
 
         loss = {
-            'total_loss': total, # can't call .item() because we run .backward() on this in train
-            'class_loss': loss_class.item(),
-            'energy_loss': loss_energy.item(),
-            'gamma_total_loss': loss_gamma_total.item(),
-            'jpi_index_loss': loss_jpi_index.item()
+            'total_loss': total,
+            'class_loss': loss_class,
+            'energy_loss': loss_energy,
+            'gamma_total_loss': loss_gamma_total,
+            'jpi_index_loss': loss_jpi_index
         }
 
         return loss

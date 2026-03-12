@@ -4,14 +4,18 @@ import torch.nn.functional as F
 from torch.amp import autocast
 from torch.utils.data import DataLoader, random_split, Subset
 from process import data
-from process.config import Config
+import process.transforms as transforms
 import numpy as np
 import pandas as pd
 import json
 import os
 from datetime import datetime
-from model.detr import DETR_Model
+from model.detr import DETR_Model, DETR_Loss
 from process.header import Header
+
+MODELS = {
+    'detr': DETR_Model,
+}
 
 train_stats = [
     'total_loss',
@@ -21,7 +25,7 @@ train_stats = [
     'jpi_index_loss'
 ]
 
-def run_epoch(n_epoch, model, loader, _target, is_eval, optimiser, device, use_amp=False):
+def run_epoch(n_epoch, model, loader, loss_fn, is_eval, optimiser, device, use_amp=False):
 
     if is_eval:
         model.eval()
@@ -33,15 +37,12 @@ def run_epoch(n_epoch, model, loader, _target, is_eval, optimiser, device, use_a
     for stat in train_stats:
         stats[stat] = 0.0
 
-    loss_fn = _target.get_loss_fn()
-
     for tensor, targets in loader:
 
         tensor = tensor.to(device, non_blocking=True)
 
         with autocast(device_type='cuda', dtype=torch.bfloat16, enabled=use_amp):
             preds = model(tensor)
-            targets = _target.get_targets(targets)
             loss = loss_fn(preds, targets)
 
         if not is_eval:
@@ -51,11 +52,7 @@ def run_epoch(n_epoch, model, loader, _target, is_eval, optimiser, device, use_a
             optimiser.step()
 
         for stat in loss.keys():
-
-            if stat == 'total_loss':
-                stats[stat] += loss[stat].item() * tensor.size(0)
-            else:
-                stats[stat] += loss[stat] * tensor.size(0)
+            stats[stat] += loss[stat].item() * tensor.size(0)
         
         n += tensor.size(0)
 
@@ -88,10 +85,10 @@ def train(params):
 
     max_crop = params.get('max_crop', False)
 
-    config = Config.from_key(params['config'])
-    model = config.get_model(header, params)
-    transform = config.get_transform()
-    target = config.get_target()
+    model_cls = MODELS[params['model']]
+    model = model_cls(header, params)
+    transform = transforms.get_augment_transform()
+    loss_fn = DETR_Loss()
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f'Using device: {device}\n')
@@ -110,7 +107,11 @@ def train(params):
                                      [train_size, val_size], \
                                         generator=torch.Generator().manual_seed(seed))
 
-    uncropped_val_dataset = data.ResonanceDataset(data_path, 0.0, config.get_transform(inference=True))
+    uncropped_val_dataset = data.ResonanceDataset(
+        data_path,
+        0.0,
+        transforms.get_augment_transform(noise_sigma_log10=0.0, amplitude_scale=0.0)
+    )
     if n_subset != -1:
         uncropped_val_dataset = Subset(uncropped_val_dataset, np.arange(n_subset))
     uncropped_val_dataset = Subset(uncropped_val_dataset, val_dataset.indices)
@@ -181,8 +182,8 @@ def train(params):
 
     for epoch in range(1, n_epochs + 1):
 
-        train_m = run_epoch(epoch, model, train_loader, target, False, optimiser, device, use_amp)
-        val_m = run_epoch(epoch, model, val_loader, target, True, optimiser, device, use_amp)
+        train_m = run_epoch(epoch, model, train_loader, loss_fn, False, optimiser, device, use_amp)
+        val_m = run_epoch(epoch, model, val_loader, loss_fn, True, optimiser, device, use_amp)
 
         scheduler.step(val_m['total_loss'])
 
@@ -241,7 +242,7 @@ def train(params):
 
     # save results
     run_name = params.get('run_name', '')
-    run_id = f"{datetime.now().strftime('%m%d_%H%M')}_{params['config']}"
+    run_id = f"{datetime.now().strftime('%m%d_%H%M')}_{params['model']}"
     if run_name:
         run_id += f"_{run_name}"
     run_dir = os.path.join('out', 'runs', run_id)

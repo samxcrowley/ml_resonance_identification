@@ -11,7 +11,7 @@ if len(sys.argv) == 2:
 with open(params_file, 'r') as f:
     params = json.load(f)
 
-print(f'\nConfig `{params["config"]}` loaded.\n')
+print(f'\nModel `{params["model"]}` loaded.\n')
 
 print(f'Starting run `{params["run_name"]}`.\n')
 

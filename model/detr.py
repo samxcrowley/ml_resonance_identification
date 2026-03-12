@@ -24,6 +24,7 @@ class DETR_Model(nn.Module):
         self.n_layers = params['n_layers']
         self.dropout_p = params['dropout_p']
         self.eval_tolerance = params['eval_tolerance']
+        self.confidence_threshold = params.get('confidence_threshold', 0.5)
 
         self.n_queries = data.MAX_RESONANCES*2
         self.n_jpi_sets = header.n_jpi_sets
@@ -165,13 +166,13 @@ class DETR_Model(nn.Module):
 
                     # true positives: matched pairs that are confident and close in energy
                     close = (difference).abs() < self.eval_tolerance
-                    confident_matched = preds['class'][n].softmax(-1)[pred_idx, 1] > 0.5
+                    confident_matched = preds['class'][n].softmax(-1)[pred_idx, 1] > self.confidence_threshold
                     tp = (close & confident_matched).sum().item()
                     
                     total_detected += tp
 
                     # false positives: confident queries that aren't true positives
-                    n_confident = (preds['class'][n].softmax(-1)[:, 1] > 0.5).sum().item()
+                    n_confident = (preds['class'][n].softmax(-1)[:, 1] > self.confidence_threshold).sum().item()
                     total_false_positive += n_confident - tp
 
         recall = total_detected / total_true if total_true > 0 else 0

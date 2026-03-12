@@ -56,7 +56,7 @@ def _crop(tensor, target, strength=0.0):
 
     # pad filtered targets back to max_resonances
     cropped_target = {}
-    target_keys = ['class', 'energy', 'gamma_total', 'jpi_index']
+    target_keys = ['class', 'energy', 'gamma', 'gamma_total', 'jpi_index']
     for k in target_keys:
         filtered = target[k][res_mask]
         pad_shape = (max_resonances - n_kept, *filtered.shape[1:])

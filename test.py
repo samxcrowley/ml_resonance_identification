@@ -1,27 +1,28 @@
 import json
 import sys
+import numpy as np
 import torch
 from torch.utils.data import DataLoader
+import matplotlib
+import matplotlib.pyplot as plt
 import process.data as data
 from model.detr import DETR_Model, DETR_Loss, HungarianMatcher
 from process.header import Header
-from process.config import Config
+import process.transforms as transforms
 
-def evaluate(run_dir, test_data_path):
-
-    # load params and model
+def evaluate(run_dir, test_data_path, confidence_threshold=0.5):
 
     with open(f'{run_dir}/params.json', 'r') as f:
         params = json.load(f)
 
     data.MAX_RESONANCES = params['max_resonances']
 
-    config = Config.from_key(params['config'])
-    transform = config.get_transform(inference=True)
+    transform = transforms.get_augment_transform(noise_sigma_log10=0.0, amplitude_scale=0.0)
 
     header = Header(params['header'])
     model = DETR_Model(header, params)
-    state_dict = torch.load(f'{run_dir}/model.pt', weights_only=True)
+    checkpoint = torch.load(f'{run_dir}/checkpoint.pt', weights_only=True)
+    state_dict = checkpoint['model']
     model.load_state_dict(state_dict)
     model.eval()
 
@@ -50,6 +51,9 @@ def evaluate(run_dir, test_data_path):
     jpi_correct = 0
     jpi_total = 0
 
+    true_counts = []
+    pred_counts = []
+
     with torch.no_grad():
 
         for tensor, targets in loader:
@@ -65,47 +69,45 @@ def evaluate(run_dir, test_data_path):
                 n_objects = len(targets[n]['energy'])
                 total_true += n_objects
 
-                # count all confident predictions for false positive calculation
-                confident_all = preds['class'][n].softmax(-1)[:, 1] > 0.5
-                n_confident = confident_all.sum().item()
+                confidences = preds['class'][n].softmax(-1)[:, 1]
+                n_confident = (confidences > confidence_threshold).sum().item()
+
+                true_counts.append(n_objects)
+                pred_counts.append(n_confident)
 
                 if len(pred_idx) == 0:
                     total_fp += n_confident
                     continue
 
-                pred_energy = preds['energy'][n][pred_idx].squeeze(-1).to(device)
+                pred_energy = preds['energy'][n][pred_idx].squeeze(-1)
                 target_energy = targets[n]['energy'][target_idx].squeeze(-1).to(device)
-
                 close = (pred_energy - target_energy).abs() < eval_tolerance
-                confident_matched = preds['class'][n].softmax(-1)[pred_idx, 1] > 0.5
-                tp_mask = close & confident_matched
-                tp_mask_cpu = tp_mask.cpu()
 
+                tp_mask = close & (confidences[pred_idx] > confidence_threshold)
                 tp = tp_mask.sum().item()
                 total_tp += tp
                 total_fp += n_confident - tp
 
-                # errors on true positives only
                 if tp > 0:
-                    energy_errors.append((pred_energy[tp_mask] - target_energy[tp_mask]).abs())
+                    energy_errors.append((pred_energy - target_energy).abs()[tp_mask].cpu())
 
-                    pred_gamma = preds['gamma_total'][n][pred_idx][tp_mask].squeeze(-1)
-                    target_gamma = targets[n]['gamma_total'][target_idx][tp_mask_cpu].squeeze(-1).to(device)
-                    gamma_total_errors.append((pred_gamma - target_gamma).abs())
+                    pred_gamma = preds['gamma_total'][n][pred_idx].squeeze(-1)
+                    target_gamma = targets[n]['gamma_total'][target_idx].squeeze(-1).to(device)
+                    gamma_total_errors.append((pred_gamma - target_gamma).abs()[tp_mask].cpu())
 
-                    pred_jpi = preds['jpi_index'][n][pred_idx][tp_mask].argmax(dim=-1)
-                    target_jpi = targets[n]['jpi_index'][target_idx][tp_mask_cpu].squeeze(-1).long().to(device)
-                    jpi_correct += (pred_jpi == target_jpi).sum().item()
+                    pred_jpi = preds['jpi_index'][n][pred_idx].argmax(dim=-1)
+                    target_jpi = targets[n]['jpi_index'][target_idx].squeeze(-1).long().to(device)
+                    jpi_correct += (pred_jpi == target_jpi)[tp_mask].sum().item()
                     jpi_total += tp
 
     precision = total_tp / (total_tp + total_fp) if (total_tp + total_fp) > 0 else 0.0
     recall = total_tp / total_true if total_true > 0 else 0.0
-
     energy_mae = torch.cat(energy_errors).mean().item() if energy_errors else float('nan')
     gamma_total_mae = torch.cat(gamma_total_errors).mean().item() if gamma_total_errors else float('nan')
     jpi_accuracy = jpi_correct / jpi_total if jpi_total > 0 else float('nan')
 
     results = {
+        'confidence_threshold': confidence_threshold,
         'precision': precision,
         'recall': recall,
         'energy_mae': energy_mae,
@@ -116,10 +118,18 @@ def evaluate(run_dir, test_data_path):
         'total_fp': total_fp,
     }
 
-    return results
+    raw = {
+        'energy_errors': torch.cat(energy_errors).numpy() if energy_errors else np.array([]),
+        'gamma_total_errors': torch.cat(gamma_total_errors).numpy() if gamma_total_errors else np.array([]),
+        'true_counts': np.array(true_counts),
+        'pred_counts': np.array(pred_counts),
+    }
+
+    return results, raw
 
 def print_results(results):
 
+    print(f'Confidence threshold: {results["confidence_threshold"]:.2f}')
     print(f'Precision: {results["precision"]:.4f}')
     print(f'Recall: {results["recall"]:.4f}')
     print(f'\nEnergy MAE: {results["energy_mae"]:.6f}')
@@ -129,10 +139,78 @@ def print_results(results):
     print(f'True positives: {results["total_tp"]}')
     print(f'False positives: {results["total_fp"]}')
 
+def plot_results(results, raw, run_dir):
+
+    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+
+    # energy error histogram
+    ax = axes[0, 0]
+    if len(raw['energy_errors']) > 0:
+        ax.hist(raw['energy_errors'], bins=50, edgecolor='black')
+    ax.set_xlabel('Absolute Energy Error')
+    ax.set_ylabel('Count')
+    ax.set_title(f'Energy Error Distribution (MAE={results["energy_mae"]:.6f})')
+
+    # gamma_total error histogram
+    ax = axes[0, 1]
+    if len(raw['gamma_total_errors']) > 0:
+        ax.hist(raw['gamma_total_errors'], bins=50, edgecolor='black')
+    ax.set_xlabel('Absolute Gamma Total Error')
+    ax.set_ylabel('Count')
+    ax.set_title(f'Gamma Total Error Distribution (MAE={results["gamma_total_mae"]:.6f})')
+
+    # resonance count confusion matrix
+    ax = axes[1, 0]
+    max_count = max(raw['true_counts'].max(), raw['pred_counts'].max()) + 1
+    cm = np.zeros((max_count, max_count), dtype=int)
+    for t, p in zip(raw['true_counts'], raw['pred_counts']):
+        cm[t, p] += 1
+    im = ax.imshow(cm, origin='lower', cmap='Blues')
+    fig.colorbar(im, ax=ax)
+    for i in range(max_count):
+        for j in range(max_count):
+            if cm[i, j] > 0:
+                ax.text(j, i, str(cm[i, j]), ha='center', va='center',
+                        color='white' if cm[i, j] > cm.max() / 2 else 'black')
+    ax.set_xlabel('Predicted Count')
+    ax.set_ylabel('True Count')
+    ax.set_title('Resonance Count Confusion Matrix')
+    ax.set_xticks(range(max_count))
+    ax.set_yticks(range(max_count))
+
+    # summary metrics table
+    ax = axes[1, 1]
+    ax.axis('off')
+    table_data = [
+        ['Confidence threshold', f'{results["confidence_threshold"]:.2f}'],
+        ['Precision', f'{results["precision"]:.4f}'],
+        ['Recall', f'{results["recall"]:.4f}'],
+        ['Energy MAE', f'{results["energy_mae"]:.6f}'],
+        ['Gamma MAE', f'{results["gamma_total_mae"]:.6f}'],
+        ['J^pi Accuracy', f'{results["jpi_accuracy"]:.4f}'],
+        ['True Positives', f'{results["total_tp"]}'],
+        ['False Positives', f'{results["total_fp"]}'],
+        ['Total True', f'{results["total_true"]}'],
+    ]
+    table = ax.table(cellText=table_data,
+                     loc='center', cellLoc='left')
+    table.auto_set_font_size(False)
+    table.set_fontsize(11)
+    table.scale(1, 1.4)
+
+    fig.suptitle(f'Test Results (confidence threshold = {results["confidence_threshold"]:.2f})', fontsize=14)
+    plt.tight_layout()
+    path = f'{run_dir}/test_results_threshold{confidence_threshold}.png'
+    plt.savefig(path, dpi=150)
+    plt.close()
+    print(f'\nPlots saved to {path}')
+
 if __name__ == '__main__':
 
     run_dir = sys.argv[1]
     test_data_path = sys.argv[2]
+    confidence_threshold = float(sys.argv[3])
 
-    results = evaluate(run_dir, test_data_path)
+    results, raw = evaluate(run_dir, test_data_path, confidence_threshold)
     print_results(results)
+    plot_results(results, raw, run_dir)

@@ -162,23 +162,19 @@ def print_results(results):
 
 def plot_results(results, raw, run_dir):
 
-    fig, axes = plt.subplots(1, 3, figsize=(16, 5))
+    fig, axes = plt.subplots(1, 3, figsize=(16, 6))
 
     # confusion matrix
     ax = axes[0]
     ax.axis('off')
     confusion_data = [
-        ['', 'Pred Positive', 'Pred Negative'],
-        ['Actual Positive', f'TP = {results["total_tp"]}', f'FN = {results["total_fn"]}'],
-        ['Actual Negative', f'FP = {results["total_fp"]}', f'TN = {results["total_tn"]}'],
+        [f'TP = {results["total_tp"]}', f'FN = {results["total_fn"]}'],
+        [f'FP = {results["total_fp"]}', f'TN = {results["total_tn"]}'],
     ]
     table = ax.table(cellText=confusion_data, loc='center', cellLoc='center')
     table.auto_set_font_size(False)
-    table.set_fontsize(11)
+    table.set_fontsize(12)
     table.scale(1, 2.0)
-    for (row, col), cell in table.get_celld().items():
-        if row == 0 or col == 0:
-            cell.set_text_props(fontweight='bold')
     ax.set_title('Confusion Table')
 
     # n_resonances confusion matrix
@@ -189,11 +185,14 @@ def plot_results(results, raw, run_dir):
         cm[t, p] += 1
     im = ax.imshow(cm, origin='lower', cmap='Blues')
     fig.colorbar(im, ax=ax)
-    for i in range(max_count):
-        for j in range(max_count):
-            if cm[i, j] > 0:
-                ax.text(j, i, str(cm[i, j]), ha='center', va='center',
-                        color='white' if cm[i, j] > cm.max() / 2 else 'black')
+
+    # display numbers (doesn't look great)
+    # for i in range(max_count):
+    #     for j in range(max_count):
+    #         if cm[i, j] > 0:
+    #             ax.text(j, i, str(cm[i, j]), ha='center', va='center',
+    #                     color='white' if cm[i, j] > cm.max() / 2 else 'black')
+
     ax.set_xlabel('Predicted Count')
     ax.set_ylabel('True Count')
     ax.set_title('Resonance Count Confusion Matrix')
@@ -204,7 +203,6 @@ def plot_results(results, raw, run_dir):
     ax = axes[2]
     ax.axis('off')
     table_data = [
-        ['Confidence threshold', f'{results["confidence_threshold"]:.2f}'],
         ['Precision', f'{results["precision"]:.4f}'],
         ['Recall', f'{results["recall"]:.4f}'],
         ['Energy MAE', f'{results["energy_mae"]:.6f}'],
@@ -212,8 +210,7 @@ def plot_results(results, raw, run_dir):
         ['Gamma Total MAE', f'{results["gamma_total_mae"]:.6f}'],
         ['J^pi Accuracy', f'{results["jpi_accuracy"]:.4f}']
     ]
-    table = ax.table(cellText=table_data,
-                     loc='center', cellLoc='left')
+    table = ax.table(cellText=table_data, loc='center', cellLoc='left')
     table.auto_set_font_size(False)
     table.set_fontsize(11)
     table.scale(1, 1.4)

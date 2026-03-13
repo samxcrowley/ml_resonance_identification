@@ -9,7 +9,7 @@ import torch
 from tqdm import tqdm
 import process.data as data
 
-target_keys = ['class', 'energy', 'gamma', 'gamma_total', 'jpi_index', 'n_res']
+target_keys = ['class', 'energy', 'gamma', 'gamma_mask', 'gamma_total', 'jpi_index', 'n_res']
 
 def _process_file(filepath):
 
@@ -99,5 +99,6 @@ def preprocess(max_resonances, workers=1, train_split=0.8):
 if __name__ == '__main__':
 
     max_resonances = sys.argv[1]
+    n_workers = int(sys.argv[2])
 
-    preprocess(max_resonances, workers=1)
+    preprocess(max_resonances, workers=n_workers)

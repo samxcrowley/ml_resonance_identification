@@ -236,6 +236,7 @@ class DETR_Loss(nn.Module):
         class_targets = targets['class']
         energy_targets = targets['energy']
         gamma_targets = targets['gamma']
+        gamma_mask_targets = targets['gamma_mask']
         gamma_total_targets = targets['gamma_total']
         jpi_index_targets = targets['jpi_index']
 
@@ -251,6 +252,7 @@ class DETR_Loss(nn.Module):
                 'class': torch.ones(mask.sum().item(), dtype=torch.long),
                 'energy': energy_targets[n][mask],
                 'gamma': gamma_targets[n][mask],
+                'gamma_mask': gamma_mask_targets[n][mask],
                 'gamma_total': gamma_total_targets[n][mask],
                 'jpi_index': jpi_index_targets[n][mask]
             })
@@ -293,10 +295,13 @@ class DETR_Loss(nn.Module):
                     targets[n]['energy'][target_idx].float().to(device, non_blocking=True)
                 )
 
-                loss_gamma += F.l1_loss(
-                    preds['gamma'][n][pred_idx],
-                    targets[n]['gamma'][target_idx].float().to(device, non_blocking=True)
-                )
+                pred_gamma = preds['gamma'][n][pred_idx]
+                target_gamma = targets[n]['gamma'][target_idx].float().to(device, non_blocking=True)
+                gamma_mask = targets[n]['gamma_mask'][target_idx].float().to(device, non_blocking=True)
+
+                if gamma_mask.sum() > 0:
+                    loss_gamma += (F.l1_loss(pred_gamma, target_gamma, reduction='none') * gamma_mask).sum() / gamma_mask.sum()
+
 
                 loss_gamma_total += F.l1_loss(
                     preds['gamma_total'][n][pred_idx],
@@ -349,6 +354,7 @@ class HungarianMatcher(nn.Module):
             target_class = targets[n]['class']
             target_energy = targets[n]['energy']
             target_gamma = targets[n]['gamma']
+            target_gamma_mask = targets[n]['gamma_mask']
             target_gamma_total = targets[n]['gamma_total']
             target_jpi_index = targets[n]['jpi_index']
 
@@ -385,11 +391,17 @@ class HungarianMatcher(nn.Module):
 
             cost += self.cost_energy * cost_energy
 
-            # gamma
+            # gamma (masked: only compare valid channels)
             pred_gamma = preds['gamma'][n]
             target_gamma = target_gamma.to(pred_gamma.device)
+            target_gamma_mask = target_gamma_mask.to(pred_gamma.device)
 
-            cost_gamma = torch.cdist(pred_gamma, target_gamma, p=1)
+            # [n_queries, n_objects, max_channels]
+            diff_gamma = (pred_gamma.unsqueeze(1) - target_gamma.unsqueeze(0)).abs()
+            cost_gamma = (diff_gamma * target_gamma_mask.unsqueeze(0)).sum(-1)
+            # normalise by number of valid channels per object
+            n_valid = target_gamma_mask.sum(-1).clamp(min=1).unsqueeze(0)
+            cost_gamma = cost_gamma / n_valid
 
             cost += self.cost_gamma * cost_gamma
 

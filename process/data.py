@@ -9,6 +9,61 @@ from process.header import Header
 # set in params.json, default is 20
 MAX_RESONANCES = 20
 
+# process experimental JSON data (no targets)
+# returns tensor
+# spreads continuous angles evenly across all 54 channels
+def process_exp_json(data, n_y=512, n_channels=54, clamp=1e-8):
+
+    tensors = []
+
+    data = data['data']
+
+    for sample in data:
+
+        points = sample['points']
+
+        cn_ex_all = np.array([p['cn_ex'] for p in points])
+        e_min = cn_ex_all.min()
+        e_max = cn_ex_all.max()
+        e_uniform = np.linspace(e_min, e_max, n_y)
+
+        # create angle bins that span the data's angular range
+        theta_all = np.array([p['theta_cm_out'] for p in points])
+        angle_bins = np.linspace(theta_all.min(), theta_all.max(), n_channels + 1)
+
+        # bin points by angle
+        point_groups = [[] for _ in range(n_channels)]
+        for p in points:
+            bin_idx = np.searchsorted(angle_bins[1:], p['theta_cm_out'], side='right')
+            bin_idx = min(bin_idx, n_channels - 1)
+            point_groups[bin_idx].append(p)
+
+        # build grid: 1D interpolation per angle bin
+        grid = np.full((n_y, n_channels), np.log10(clamp), dtype=np.float32)
+
+        for ch_idx in range(n_channels):
+
+            if not point_groups[ch_idx]:
+                continue
+
+            e = np.array([p['cn_ex'] for p in point_groups[ch_idx]])
+            z = np.array([np.log10(max(p['dsdO'], clamp)) for p in point_groups[ch_idx]])
+
+            order = np.argsort(e)
+
+            grid[:, ch_idx] = np.interp(
+                e_uniform,
+                e[order],
+                z[order],
+                left=np.log10(clamp),
+                right=np.log10(clamp)
+            )
+
+        grid = np.nan_to_num(grid, nan=np.log10(clamp))
+        tensors.append(torch.tensor(grid, dtype=torch.float32))
+
+    return tensors
+
 # process loaded JSON list into (tensors [list], targets [dict])
 # tensor shape: [n_y, n_channels]
 # where n_channels = n_pp_combos * n_angles (for now, 9 * 6 = 54)
@@ -19,6 +74,7 @@ def process_json(data, n_y=512, clamp=1e-8):
     class_targets = []
     energy_targets = []
     gamma_targets = []
+    gamma_mask_targets = []
     gamma_total_targets = []
     n_res_targets = []
     jpi_index_targets = []
@@ -91,6 +147,7 @@ def process_json(data, n_y=512, clamp=1e-8):
         class_target = torch.zeros([MAX_RESONANCES, 2], dtype=torch.float32)
         energy_target = torch.zeros([MAX_RESONANCES, 1], dtype=torch.float32)
         gamma_target = torch.zeros([MAX_RESONANCES, header.max_channels], dtype=torch.float32)
+        gamma_mask_target = torch.zeros([MAX_RESONANCES, header.max_channels], dtype=torch.float32)
         gamma_total_target = torch.zeros([MAX_RESONANCES, 1], dtype=torch.float32)
         jpi_index_target = torch.zeros([MAX_RESONANCES, 1], dtype=torch.float32)
 
@@ -108,6 +165,7 @@ def process_json(data, n_y=512, clamp=1e-8):
 
             for i in range(len(level['Gamma'])):
                 gamma_target[n, i] = np.log10(max(level['Gamma'][i], clamp))
+                gamma_mask_target[n, i] = 1.0
 
             gamma_total = sum(level['Gamma'])
             gamma_total = np.log10(max(gamma_total, clamp))
@@ -126,6 +184,7 @@ def process_json(data, n_y=512, clamp=1e-8):
         class_targets.append(class_target)
         energy_targets.append(energy_target)
         gamma_targets.append(gamma_target)
+        gamma_mask_targets.append(gamma_mask_target)
         gamma_total_targets.append(gamma_total_target)
         jpi_index_targets.append(jpi_index_target)
         n_res_norm = transforms._normalise(n_resonances, 0, MAX_RESONANCES)
@@ -135,6 +194,7 @@ def process_json(data, n_y=512, clamp=1e-8):
         'class': torch.stack(class_targets),
         'energy': torch.stack(energy_targets),
         'gamma': torch.stack(gamma_targets),
+        'gamma_mask': torch.stack(gamma_mask_targets),
         'gamma_total': torch.stack(gamma_total_targets),
         'jpi_index': torch.stack(jpi_index_targets),
         'n_res': torch.tensor(n_res_targets, dtype=torch.float32),

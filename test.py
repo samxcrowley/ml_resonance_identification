@@ -37,7 +37,6 @@ def evaluate(run_dir, test_data_path, confidence_threshold=0.5):
         cost_class=loss_fn.cost_class,
         cost_energy=loss_fn.cost_energy,
         cost_gamma=loss_fn.cost_gamma,
-        cost_gamma_total=loss_fn.cost_gamma_total,
         cost_jpi_index=loss_fn.cost_jpi_index
     )
 
@@ -50,7 +49,6 @@ def evaluate(run_dir, test_data_path, confidence_threshold=0.5):
 
     energy_errors = []
     gamma_errors = []
-    gamma_total_errors = []
     jpi_correct = 0
     jpi_total = 0
 
@@ -101,10 +99,6 @@ def evaluate(run_dir, test_data_path, confidence_threshold=0.5):
                     target_gamma = targets[n]['gamma'][target_idx].to(device)
                     gamma_errors.append((pred_gamma - target_gamma).abs()[tp_mask].cpu())
 
-                    pred_gamma_total = preds['gamma_total'][n][pred_idx].squeeze(-1)
-                    target_gamma_total = targets[n]['gamma_total'][target_idx].squeeze(-1).to(device)
-                    gamma_total_errors.append((pred_gamma_total - target_gamma_total).abs()[tp_mask].cpu())
-
                     pred_jpi = preds['jpi_index'][n][pred_idx].argmax(dim=-1)
                     target_jpi = targets[n]['jpi_index'][target_idx].squeeze(-1).long().to(device)
                     jpi_correct += (pred_jpi == target_jpi)[tp_mask].sum().item()
@@ -117,7 +111,6 @@ def evaluate(run_dir, test_data_path, confidence_threshold=0.5):
     recall = total_tp / total_true if total_true > 0 else 0.0
     energy_mae = torch.cat(energy_errors).mean().item() if energy_errors else float('nan')
     gamma_mae = torch.cat(gamma_errors).mean().item() if gamma_errors else float('nan')
-    gamma_total_mae = torch.cat(gamma_total_errors).mean().item() if gamma_total_errors else float('nan')
     jpi_accuracy = jpi_correct / jpi_total if jpi_total > 0 else float('nan')
 
     results = {
@@ -126,7 +119,6 @@ def evaluate(run_dir, test_data_path, confidence_threshold=0.5):
         'recall': recall,
         'energy_mae': energy_mae,
         'gamma_mae': gamma_mae,
-        'gamma_total_mae': gamma_total_mae,
         'jpi_accuracy': jpi_accuracy,
         'total_true': total_true,
         'total_tp': total_tp,
@@ -138,7 +130,6 @@ def evaluate(run_dir, test_data_path, confidence_threshold=0.5):
     raw = {
         'energy_errors': torch.cat(energy_errors).numpy() if energy_errors else np.array([]),
         'gamma_errors': torch.cat(gamma_errors).numpy() if gamma_errors else np.array([]),
-        'gamma_total_errors': torch.cat(gamma_total_errors).numpy() if gamma_total_errors else np.array([]),
         'true_counts': np.array(true_counts),
         'pred_counts': np.array(pred_counts),
     }
@@ -152,7 +143,6 @@ def print_results(results):
     print(f'Recall: {results["recall"]:.4f}')
     print(f'\nEnergy MAE: {results["energy_mae"]:.6f}')
     print(f'Gamma MAE: {results["gamma_mae"]:.6f}')
-    print(f'Gamma Total MAE: {results["gamma_total_mae"]:.6f}')
     print(f'J^pi Accuracy: {results["jpi_accuracy"]:.4f}')
     print(f'\nTotal true: {results["total_true"]}')
     print(f'True positives: {results["total_tp"]}')
@@ -207,7 +197,6 @@ def plot_results(results, raw, run_dir):
         ['Recall', f'{results["recall"]:.4f}'],
         ['Energy MAE', f'{results["energy_mae"]:.6f}'],
         ['Gamma MAE', f'{results["gamma_mae"]:.6f}'],
-        ['Gamma Total MAE', f'{results["gamma_total_mae"]:.6f}'],
         ['J^pi Accuracy', f'{results["jpi_accuracy"]:.4f}']
     ]
     table = ax.table(cellText=table_data, loc='center', cellLoc='left')

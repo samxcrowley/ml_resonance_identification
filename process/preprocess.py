@@ -9,7 +9,7 @@ import torch
 from tqdm import tqdm
 import process.data as data
 
-target_keys = ['class', 'energy', 'gamma', 'gamma_mask', 'gamma_total', 'jpi_index', 'n_res']
+target_keys = ['class', 'energy', 'gamma', 'gamma_mask', 'jpi_index', 'n_res']
 
 def _process_file(filepath):
 

@@ -9,6 +9,9 @@ from process.header import Header
 # set in params.json, default is 20
 MAX_RESONANCES = 20
 
+GAMMA_LOG_MIN = -8.0 # log10(1e-8)
+GAMMA_LOG_MAX = 2.0 # log10(100 MeV)
+
 # process experimental JSON data (no targets)
 # returns tensor
 # spreads continuous angles evenly across all 54 channels
@@ -75,7 +78,6 @@ def process_json(data, n_y=512, clamp=1e-8):
     energy_targets = []
     gamma_targets = []
     gamma_mask_targets = []
-    gamma_total_targets = []
     n_res_targets = []
     jpi_index_targets = []
 
@@ -148,7 +150,6 @@ def process_json(data, n_y=512, clamp=1e-8):
         energy_target = torch.zeros([MAX_RESONANCES, 1], dtype=torch.float32)
         gamma_target = torch.zeros([MAX_RESONANCES, header.max_channels], dtype=torch.float32)
         gamma_mask_target = torch.zeros([MAX_RESONANCES, header.max_channels], dtype=torch.float32)
-        gamma_total_target = torch.zeros([MAX_RESONANCES, 1], dtype=torch.float32)
         jpi_index_target = torch.zeros([MAX_RESONANCES, 1], dtype=torch.float32)
 
         # filter to only resonances within the energy range
@@ -164,12 +165,9 @@ def process_json(data, n_y=512, clamp=1e-8):
             energy_target[n] = energy
 
             for i in range(len(level['Gamma'])):
-                gamma_target[n, i] = np.log10(max(level['Gamma'][i], clamp))
+                g = np.clip(np.log10(max(level['Gamma'][i], clamp)), GAMMA_LOG_MIN, GAMMA_LOG_MAX)
+                gamma_target[n, i] = (g - GAMMA_LOG_MIN) / (GAMMA_LOG_MAX - GAMMA_LOG_MIN)
                 gamma_mask_target[n, i] = 1.0
-
-            gamma_total = sum(level['Gamma'])
-            gamma_total = np.log10(max(gamma_total, clamp))
-            gamma_total_target[n] = gamma_total
 
             jpi_index_target[n] = level['jpi_index']
 
@@ -185,7 +183,6 @@ def process_json(data, n_y=512, clamp=1e-8):
         energy_targets.append(energy_target)
         gamma_targets.append(gamma_target)
         gamma_mask_targets.append(gamma_mask_target)
-        gamma_total_targets.append(gamma_total_target)
         jpi_index_targets.append(jpi_index_target)
         n_res_norm = transforms._normalise(n_resonances, 0, MAX_RESONANCES)
         n_res_targets.append(n_res_norm)
@@ -195,7 +192,6 @@ def process_json(data, n_y=512, clamp=1e-8):
         'energy': torch.stack(energy_targets),
         'gamma': torch.stack(gamma_targets),
         'gamma_mask': torch.stack(gamma_mask_targets),
-        'gamma_total': torch.stack(gamma_total_targets),
         'jpi_index': torch.stack(jpi_index_targets),
         'n_res': torch.tensor(n_res_targets, dtype=torch.float32),
     }
@@ -233,15 +229,20 @@ class ResonanceDataset(Dataset):
 
 def open_data_file(path):
 
-    if path.endswith('gz'):
+    if path.endswith('jsonl.gz'):
+
+        with gzip.open(path, 'rb') as f:
+            data = [json.loads(line) for line in f]
+
+    elif path.endswith('gz'):
+
         with gzip.open(path, 'rb') as f:
             json_bytes = f.read()
             json_str = json_bytes.decode()
             data = json.loads(json_str)
-    elif path.endswith('json'):
-        with open(path, 'r') as f:
-            data = json.load(f)
+
     else:
+        
         print('Invalid data file type.')
         return None
 

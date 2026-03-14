@@ -21,7 +21,6 @@ train_stats = [
     'class_loss',
     'energy_loss',
     'gamma_loss',
-    'gamma_total_loss',
     'jpi_index_loss'
 ]
 

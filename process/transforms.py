@@ -18,7 +18,6 @@ def get_augment_transform(noise_sigma_log10=0.1, amplitude_scale=0.2):
 
     return transform
 
-
 def _crop(tensor, target, strength=0.0):
 
     E, A = tensor.shape
@@ -56,7 +55,7 @@ def _crop(tensor, target, strength=0.0):
 
     # pad filtered targets back to max_resonances
     cropped_target = {}
-    target_keys = ['class', 'energy', 'gamma', 'gamma_mask', 'gamma_total', 'jpi_index']
+    target_keys = ['class', 'energy', 'gamma', 'gamma_mask', 'jpi_index']
     for k in target_keys:
         filtered = target[k][res_mask]
         pad_shape = (max_resonances - n_kept, *filtered.shape[1:])

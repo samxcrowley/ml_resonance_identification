@@ -117,9 +117,7 @@ def train(params):
     if n_subset != -1:
         uncropped_val_dataset = Subset(uncropped_val_dataset, np.arange(n_subset))
     uncropped_val_dataset = Subset(uncropped_val_dataset, val_dataset.indices)
-
-    print(f'Data loaded with {data.MAX_RESONANCES} maximum resonances.')
-    print(f'Maximum cropping strength of {max_crop} per sample.')
+    
     print(f'Training size: {len(train_dataset)}')
     print(f'Validation size: {len(val_dataset)}\n')
 

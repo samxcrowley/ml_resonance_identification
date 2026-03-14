@@ -219,7 +219,7 @@ class ResonanceDataset(Dataset):
         target = {key: self.targets[key][idx] for key in self.targets}
 
         # crop
-        tensor, target = transforms._crop(tensor, target, np.random.rand() * self.max_crop)
+        tensor, target = transforms._crop(tensor, target, self.max_crop)
 
         # initial transform
         if self.transform:

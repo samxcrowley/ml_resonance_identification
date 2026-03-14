@@ -26,13 +26,11 @@ def _crop(tensor, target, strength=0.0):
         mask = torch.ones(E, A)
         return torch.stack([tensor, mask], dim=0), target
 
-    # pick a fraction of energies to cut out (up to strength)
+    # pick a fraction of energies to cut out
     E_crop_ratio = np.random.rand() * strength
     E_keep_ratio = 1.0 - E_crop_ratio
-
     e_start = np.random.rand() * (1.0 - E_keep_ratio)
     e_end = e_start + E_keep_ratio
-
     e_idx_start = int(e_start * E)
     e_idx_end = int(e_end * E)
 
@@ -42,6 +40,23 @@ def _crop(tensor, target, strength=0.0):
     mask = torch.ones(E, A)
     mask[:e_idx_start, :] = 0.0
     mask[e_idx_end:, :] = 0.0
+
+    # randomly reduce energy resolution
+    strides = [1, 1, 2, 2, 3]
+    if np.random.rand() < strength:
+        stride = strides[np.random.randint(len(strides))]
+        if stride > 1:
+            for e in range(e_idx_start, e_idx_end):
+                if (e - e_idx_start) % stride != 0:
+                    mask[e, :] = 0.0
+
+    # crop out angles (same angles dropped across all 9 pp combos)
+    n_pp = 9
+    n_angles = A // n_pp
+    for a in range(n_angles):
+        if np.random.rand() <= (strength / 2):
+            for pp in range(n_pp):
+                mask[:, pp * n_angles + a] = 0.0
 
     # * operation zeros out cropped values
     cropped_tensor = torch.stack([tensor * mask, mask], dim=0)
@@ -72,7 +87,6 @@ def _crop(tensor, target, strength=0.0):
 # noise in linear
 # reasonable range is 0.05-0.2
 def _add_noise(tensor, noise_sigma_log10):
-    # only add noise to data channel (index 0), not the mask (index 1)
     noisy = tensor.clone()
     noisy[0] = tensor[0] + torch.randn_like(tensor[0]) * noise_sigma_log10
     return noisy

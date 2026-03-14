@@ -9,12 +9,14 @@ class DecoderLayer(nn.Module):
 
         self.self_attention = nn.MultiheadAttention(d_model, n_head, batch_first=True)
         self.norm1 = nn.LayerNorm(d_model)
+        self.dropout1 = nn.Dropout(dropout_p)
 
         self.cross_attention = nn.MultiheadAttention(d_model, n_head, batch_first=True)
         self.norm2 = nn.LayerNorm(d_model)
+        self.dropout2 = nn.Dropout(dropout_p)
 
         self.linear1 = nn.Linear(d_model, n_hidden)
-        self.dropout = nn.Dropout(dropout_p)
+        self.dropout3 = nn.Dropout(dropout_p)
         self.linear2 = nn.Linear(n_hidden, d_model)
         self.norm3 = nn.LayerNorm(d_model)
 
@@ -30,7 +32,7 @@ class DecoderLayer(nn.Module):
         v = x
 
         self_att_out, _ = self.self_attention(q, k, v)
-        x = residual + self_att_out
+        x = residual + self.dropout1(self_att_out)
 
         # sublayer 2: cross-attention
 
@@ -42,7 +44,7 @@ class DecoderLayer(nn.Module):
         v = enc
 
         cross_att_out, cross_att = self.cross_attention(q, k, v)
-        x = residual + cross_att_out
+        x = residual + self.dropout2(cross_att_out)
 
         # sublayer 3: feed-forward
 
@@ -51,7 +53,7 @@ class DecoderLayer(nn.Module):
 
         ff_out = self.linear1(x)
         ff_out = F.relu(ff_out)
-        ff_out = self.dropout(ff_out)
+        ff_out = self.dropout3(ff_out)
         ff_out = self.linear2(ff_out)
 
         x = residual + ff_out

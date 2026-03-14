@@ -15,9 +15,13 @@ class Transformer_Encoder_Model(nn.Module):
                                                   dropout_p=dropout_p)
                                     for _ in range(n_layers)])
 
+        self.norm = nn.LayerNorm(d_model)
+
     def forward(self, x, pos_enc):
 
         for layer in self.layers:
             x = layer(x, pos_enc)
+
+        x = self.norm(x)
 
         return x

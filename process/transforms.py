@@ -102,14 +102,14 @@ def _amplitude_scale(tensor, max_scale):
 def _lambda(foo, flag=True):
     return torchvision.transforms.Lambda(foo if flag else (lambda x: x))
 
-def _normalise(x, min=None, max=None):
+def _normalise(x, _min=None, _max=None):
 
-    if min == None:
-        min = x.min()
-    if max == None:
-        max = x.max()
+    if _min is None:
+        _min = x.min()
+    if _max is None:
+        _max = x.max()
 
-    return (x - min) / (max - min)
+    return (x - _min) / (_max - _min)
 
 def _unsqueeze(x, dim):
     x = x.unsqueeze(dim=dim)

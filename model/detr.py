@@ -284,6 +284,14 @@ class DETR_Loss(nn.Module):
                 target_gamma = targets[n]['gamma'][target_idx].float().to(device, non_blocking=True)
                 gamma_mask = targets[n]['gamma_mask'][target_idx].float().to(device, non_blocking=True)
 
+                # zero out NaN gammas and clear their mask
+                nan_mask = target_gamma.isnan()
+                if nan_mask.any():
+                    target_gamma = target_gamma.clone()
+                    gamma_mask = gamma_mask.clone()
+                    target_gamma[nan_mask] = 0.0
+                    gamma_mask[nan_mask] = 0.0
+
                 if gamma_mask.sum() > 0:
                     loss_gamma += (F.l1_loss(pred_gamma, target_gamma, reduction='none') * gamma_mask).sum() / gamma_mask.sum()
 
@@ -366,14 +374,23 @@ class HungarianMatcher(nn.Module):
 
             cost += self.cost_energy * cost_energy
 
-            # gamma (masked: only compare valid channels)
+            # gamma
             pred_gamma = preds['gamma'][n]
             target_gamma = target_gamma.to(pred_gamma.device)
             target_gamma_mask = target_gamma_mask.to(pred_gamma.device)
 
+            # zero out NaN gammas and clear their mask
+            nan_mask = target_gamma.isnan()
+            if nan_mask.any():
+                target_gamma = target_gamma.clone()
+                target_gamma_mask = target_gamma_mask.clone()
+                target_gamma[nan_mask] = 0.0
+                target_gamma_mask[nan_mask] = 0.0
+
             # [n_queries, n_objects, max_channels]
             diff_gamma = (pred_gamma.unsqueeze(1) - target_gamma.unsqueeze(0)).abs()
             cost_gamma = (diff_gamma * target_gamma_mask.unsqueeze(0)).sum(-1)
+            
             # normalise by number of valid channels per object
             n_valid = target_gamma_mask.sum(-1).clamp(min=1).unsqueeze(0)
             cost_gamma = cost_gamma / n_valid

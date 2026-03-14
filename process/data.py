@@ -141,7 +141,7 @@ def process_json(data, n_y=512, clamp=1e-8):
                     )
 
                 ch_idx += 1
-
+        
         grid = np.nan_to_num(grid, nan=np.log10(clamp))
         tensors.append(torch.tensor(grid, dtype=torch.float32))
 
@@ -165,7 +165,10 @@ def process_json(data, n_y=512, clamp=1e-8):
             energy_target[n] = energy
 
             for i in range(len(level['Gamma'])):
-                g = np.clip(np.log10(max(level['Gamma'][i], clamp)), GAMMA_LOG_MIN, GAMMA_LOG_MAX)
+                val = level['Gamma'][i]
+                if val is None or np.isnan(val):
+                    continue
+                g = np.clip(np.log10(max(val, clamp)), GAMMA_LOG_MIN, GAMMA_LOG_MAX)
                 gamma_target[n, i] = (g - GAMMA_LOG_MIN) / (GAMMA_LOG_MAX - GAMMA_LOG_MIN)
                 gamma_mask_target[n, i] = 1.0
 

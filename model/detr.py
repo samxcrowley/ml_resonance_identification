@@ -100,9 +100,6 @@ class DETR_Model(nn.Module):
                 nn.Sigmoid()
             )
 
-    def get_loss_fn(self):
-        return DETR_Loss(self.header, self.params)
-
     def forward(self, x):
 
         N = x.size(0)
@@ -129,70 +126,11 @@ class DETR_Model(nn.Module):
         return preds
 
     def get_optimiser(self, lr, weight_decay):
-
         optimiser = torch.optim.AdamW(self.parameters(), lr=lr, weight_decay=weight_decay)
-
         return optimiser
 
-    def evaluate(self, loader, device):
-
-        self.eval()
-
-        total_true = 0
-        total_detected = 0
-        total_false_positive = 0
-
-        loss_fn = DETR_Loss(self.header, self.params)
-
-        matcher = HungarianMatcher()
-
-        with torch.no_grad():
-
-            for tensor, targets in loader:
-
-                tensor = tensor.to(device, non_blocking=True)
-                preds = self(tensor)
-
-                targets = loss_fn.prepare_targets(targets)
-
-                indices = matcher(preds, targets)
-
-                for n in range(len(targets)):
-
-                    pred_idx, target_idx = indices[n]
-
-                    n_objects = len(targets[n]['energy'])
-
-                    total_true += n_objects
-
-                    if len(pred_idx) == 0:
-                        continue
-
-                    pred_energy = preds['energy'][n][pred_idx].squeeze()
-
-                    target_energy = targets[n]['energy'][target_idx].squeeze()
-                    target_energy = target_energy.to(device, non_blocking=True)
-
-                    difference = pred_energy - target_energy
-
-                    # true positives: matched pairs that are confident and close in energy
-                    close = (difference).abs() < self.eval_tolerance
-                    confident_matched = preds['class'][n].softmax(-1)[pred_idx, 1] > self.confidence_threshold
-                    tp = (close & confident_matched).sum().item()
-                    
-                    total_detected += tp
-
-                    # false positives: confident queries that aren't true positives
-                    n_confident = (preds['class'][n].softmax(-1)[:, 1] > self.confidence_threshold).sum().item()
-                    total_false_positive += n_confident - tp
-
-        recall = total_detected / total_true if total_true > 0 else 0
-        precision = total_detected / (total_detected + total_false_positive) if (total_detected + total_false_positive) > 0 else 0
-
-        return {
-            'recall': recall,
-            'precision': precision
-        }
+    def get_loss_fn(self):
+        return DETR_Loss(self.header, self.params)
 
 class DETR_Loss(nn.Module):
 

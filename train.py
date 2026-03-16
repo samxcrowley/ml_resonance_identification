@@ -137,14 +137,6 @@ def train(params):
                             persistent_workers=True,
                             prefetch_factor=4)
 
-    uncropped_val_loader = DataLoader(uncropped_val_dataset,
-                                     batch_size=batch_size,
-                                     shuffle=False,
-                                     num_workers=num_workers,
-                                     pin_memory=True,
-                                     persistent_workers=True,
-                                     prefetch_factor=4)
-
     model.to(device)
 
     optimiser = model.get_optimiser(lr=lr, weight_decay=weight_decay)
@@ -168,11 +160,6 @@ def train(params):
         results[f'train_{stat}'] = []
         results[f'val_{stat}'] = []
 
-    results['val_precision'] = []
-    results['val_recall'] = []
-    results['val_uncropped_precision'] = []
-    results['val_uncropped_recall'] = []
-
     t_start = datetime.now()
     print(f'Started training at {t_start.strftime("%Y-%m-%d %H:%M:%S")}\n')
 
@@ -193,32 +180,6 @@ def train(params):
             results[f'train_{stat}'].append(train_m[stat])
             results[f'val_{stat}'].append(val_m[stat])
 
-        # evaluate precision/recall every eval_every_n epochs
-        if epoch % eval_every_n == 0 or epoch == n_epochs:
-
-            evaluate_m = model.evaluate(loader=val_loader, device=device)
-
-            precision = evaluate_m["precision"]
-            recall = evaluate_m["recall"]
-
-            uc_evaluate_m = model.evaluate(loader=uncropped_val_loader, device=device)
-
-            uc_precision = uc_evaluate_m["precision"]
-            uc_recall = uc_evaluate_m["recall"]
-
-        else:
-
-            precision = results['val_precision'][-1] if results['val_precision'] else 0.0
-            recall = results['val_recall'][-1] if results['val_recall'] else 0.0
-            
-            uc_precision = results['val_uncropped_precision'][-1] if results['val_uncropped_precision'] else 0.0
-            uc_recall = results['val_uncropped_recall'][-1] if results['val_uncropped_recall'] else 0.0
-
-        results['val_precision'].append(precision)
-        results['val_recall'].append(recall)
-        results['val_uncropped_precision'].append(uc_precision)
-        results['val_uncropped_recall'].append(uc_recall)
-
         # track best model by val loss
         if val_m['total_loss'] < best_val_loss:
             best_val_loss = val_m['total_loss']
@@ -230,10 +191,12 @@ def train(params):
                 f'Epoch {epoch}/{n_epochs} '
                 f'| Train loss {train_m["total_loss"]:.4f} '
                 f'| Val loss {val_m["total_loss"]:.4f} '
-                f'| Prec {precision:.4f} '
-                f'| Rec {recall:.4f} '
-                f'| UC Prec {uc_precision:.4f} '
-                f'| UC Rec {uc_recall:.4f}'
+                f'| Train E loss {train_m["energy_loss"]:.4f} '
+                f'| Val E loss {val_m["energy_loss"]:.4f} '
+                f'| Train J loss {train_m["jpi_index_loss"]:.4f} '
+                f'| Val J loss {val_m["jpi_index_loss"]:.4f} '
+                f'| Train G loss {train_m["gamma_loss"]:.4f} '
+                f'| Val G loss {val_m["gamma_loss"]:.4f}'
             )
 
     t_end = datetime.now()

@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 import numpy as np
 import torch
@@ -33,12 +34,7 @@ def evaluate(run_dir, test_data_path, confidence_threshold=0.5):
     loader = DataLoader(dataset, batch_size=64, shuffle=False)
 
     loss_fn = model.get_loss_fn()
-    matcher = HungarianMatcher(
-        cost_class=loss_fn.cost_class,
-        cost_energy=loss_fn.cost_energy,
-        cost_gamma=loss_fn.cost_gamma,
-        cost_jpi_index=loss_fn.cost_jpi_index
-    )
+    matcher = HungarianMatcher()
 
     eval_tolerance = params.get('eval_tolerance', 0.05)
 
@@ -97,7 +93,18 @@ def evaluate(run_dir, test_data_path, confidence_threshold=0.5):
 
                     pred_gamma = preds['gamma'][n][pred_idx]
                     target_gamma = targets[n]['gamma'][target_idx].to(device)
-                    gamma_errors.append((pred_gamma - target_gamma).abs()[tp_mask].cpu())
+                    gamma_mask = targets[n]['gamma_mask'][target_idx].to(device)
+                    nan_mask = target_gamma.isnan()
+                    if nan_mask.any():
+                        target_gamma = target_gamma.clone()
+                        target_gamma[nan_mask] = 0.0
+                        gamma_mask = gamma_mask.clone()
+                        gamma_mask[nan_mask] = 0.0
+                    gamma_diff = (pred_gamma - target_gamma).abs()[tp_mask]
+                    gamma_m = gamma_mask[tp_mask].bool()
+                    gamma_diff = gamma_diff[gamma_m]
+                    if gamma_diff.numel() > 0:
+                        gamma_errors.append(gamma_diff.cpu())
 
                     pred_jpi = preds['jpi_index'][n][pred_idx].argmax(dim=-1)
                     target_jpi = targets[n]['jpi_index'][target_idx].squeeze(-1).long().to(device)
@@ -133,6 +140,10 @@ def evaluate(run_dir, test_data_path, confidence_threshold=0.5):
         'true_counts': np.array(true_counts),
         'pred_counts': np.array(pred_counts),
     }
+    
+    # save results
+    with open(os.path.join(run_dir, f'test_results_threshold{confidence_threshold}.csv'), 'w') as f:
+        json.dump(results, f, indent=4)
 
     return results, raw
 
@@ -210,7 +221,6 @@ def plot_results(results, raw, run_dir):
     path = f'{run_dir}/test_results_threshold{confidence_threshold}.png'
     plt.savefig(path, dpi=150)
     plt.close()
-    print(f'\nPlots saved to {path}')
 
 if __name__ == '__main__':
 

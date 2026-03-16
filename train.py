@@ -220,7 +220,7 @@ def train(params):
         json.dump(params, f, indent=4)
 
     df = pd.DataFrame(results)
-    df.to_csv(os.path.join(run_dir, 'results.csv'), index=False)
+    df.to_csv(os.path.join(run_dir, 'train_results.csv'), index=False)
 
     torch.save({
         'model': best_model_state,

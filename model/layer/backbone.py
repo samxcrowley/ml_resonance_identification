@@ -1,6 +1,4 @@
 from torch import nn
-import torchvision
-import torchvision.models
 
 class Backbone(nn.Module):
 

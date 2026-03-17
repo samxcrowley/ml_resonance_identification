@@ -20,10 +20,13 @@ def get_augment_transform(noise_sigma_log10=0.1, amplitude_scale=0.2):
 
 def _crop(tensor, target, strength=0.0):
 
-    E, A = tensor.shape
+    E, C = tensor.shape
+
+    n_pp = 9
+    n_angles = C // n_pp
 
     if strength == 0.0:
-        mask = torch.ones(E, A)
+        mask = torch.ones(E, C)
         return torch.stack([tensor, mask], dim=0), target
 
     # pick a fraction of energies to cut out
@@ -33,40 +36,49 @@ def _crop(tensor, target, strength=0.0):
     e_end = e_start + E_keep_ratio
     e_idx_start = int(e_start * E)
     e_idx_end = int(e_end * E)
-
-    # build spatial mask
-    # 0: cropped
-    # 1: valid
-    mask = torch.ones(E, A)
+    mask = torch.ones(E, C)
     mask[:e_idx_start, :] = 0.0
     mask[e_idx_end:, :] = 0.0
 
-    # randomly reduce energy resolution
-    strides = [1, 1, 2, 2, 3]
-    if np.random.rand() < strength:
-        stride = strides[np.random.randint(len(strides))]
-        if stride > 1:
-            for e in range(e_idx_start, e_idx_end):
-                if (e - e_idx_start) % stride != 0:
-                    mask[e, :] = 0.0
+    # drop random channels
+    for n in range(n_pp):
+        if np.random.rand() <= strength:
+            start = n * n_angles
+            end = start + n_angles
+            mask[:, start:end] = 0.0
 
-    # crop out angles (same angles dropped across all 9 pp combos)
-    n_pp = 9
-    n_angles = A // n_pp
+    # crop out angles (same angles dropped across all 9 channels)
     for a in range(n_angles):
         if np.random.rand() <= (strength / 2):
             for pp in range(n_pp):
                 mask[:, pp * n_angles + a] = 0.0
 
-    # * operation zeros out cropped values
-    cropped_tensor = torch.stack([tensor * mask, mask], dim=0)
+    # set cropped values to the floor (-8 in log10)
+    cropped_tensor = torch.stack([torch.where(mask > 0, tensor, torch.tensor(-8.0)), mask], dim=0)
 
-    # filter resonances that fall within the crop window
+    # only keep resonances that weren't cropped
     max_resonances = target['energy'].shape[0]
     energies = target['energy'].squeeze(1)
-    res_mask = (energies >= e_start) & (energies <= e_end)
+    masked_tensor = tensor * mask
 
+    res_mask = torch.zeros(max_resonances, dtype=torch.bool)
     n_kept = res_mask.sum().item()
+
+    for i in range(max_resonances):
+
+        e = energies[i].item()
+        
+        if e < e_start or e > e_end:
+            continue
+
+        e_idx = int(e * E)
+        # e_idx = min(e_idx, E - 1)
+
+        # check if any unmasked column has signal above the floor at this energy
+        row_mask = mask[e_idx]
+        row_vals = tensor[e_idx]
+        if (row_vals[row_mask > 0] > -8.0).any():
+            res_mask[i] = True
 
     # pad filtered targets back to max_resonances
     cropped_target = {}

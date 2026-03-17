@@ -22,7 +22,7 @@ def evaluate(run_dir, test_data_path, confidence_threshold=0.5):
 
     header = Header(params['header'])
     model = DETR_Model(header, params)
-    checkpoint = torch.load(f'{run_dir}/checkpoint.pt', weights_only=True)
+    checkpoint = torch.load(f'{run_dir}/checkpoint.pt', weights_only=False)
     state_dict = checkpoint['model']
     model.load_state_dict(state_dict)
     model.eval()

@@ -150,7 +150,18 @@ def train(params):
             pg['lr'] = lr
         print(f'Resumed from {resume_from}\n')
 
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimiser, mode='min', factor=0.5, patience=5)
+    warmup_epochs = params.get('warmup_epochs', 5)
+    scheduler_type = params.get('scheduler', 'cosine')
+
+    if scheduler_type == 'cosine':
+        def lr_lambda(epoch):
+            if epoch < warmup_epochs:
+                return (epoch + 1) / warmup_epochs
+            progress = (epoch - warmup_epochs) / max(1, n_epochs - warmup_epochs)
+            return 0.5 * (1.0 + np.cos(np.pi * progress))
+        scheduler = torch.optim.lr_scheduler.LambdaLR(optimiser, lr_lambda)
+    else:
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimiser, mode='min', factor=0.5, patience=5)
 
     results = {
         'epoch': []
@@ -172,7 +183,10 @@ def train(params):
         train_m = run_epoch(epoch, model, train_loader, loss_fn, False, optimiser, device)
         val_m = run_epoch(epoch, model, val_loader, loss_fn, True, optimiser, device)
 
-        scheduler.step(val_m['total_loss'])
+        if scheduler_type == 'cosine':
+            scheduler.step()
+        else:
+            scheduler.step(val_m['total_loss'])
 
         results['epoch'].append(epoch)
 

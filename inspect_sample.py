@@ -7,11 +7,11 @@ from process.data import ResonanceDataset
 from model.detr import DETR_Model, DETR_Loss, HungarianMatcher
 from process.header import Header
 
-SAMPLE_IDX = 245
+SAMPLE_IDX = 100
 DATASET_PATH = 'data/preprocessed/nlevels_20_test.pt'
-CHECKPOINT_PATH = 'out/runs/0316_0522_detr_crop05/checkpoint.pt'
-PARAMS_PATH = 'params/newcrop.json'
-CONFIDENCE_THRESHOLD = 0.9
+CHECKPOINT_PATH = 'out/runs/STANDARD_0317_1157_detr_gammaimprove_6layers_classheadmlp_cosine_warmup_30queries/checkpoint.pt'
+PARAMS_PATH = 'params/gammaimprove.json'
+CONFIDENCE_THRESHOLD = 0.5
 
 header = Header()
 with open(PARAMS_PATH, 'r') as f:
@@ -61,12 +61,7 @@ prepared_preds = {
 }
 
 loss_fn = DETR_Loss(header, params)
-matcher = HungarianMatcher(
-    cost_class=loss_fn.cost_class,
-    cost_energy=loss_fn.cost_energy,
-    cost_gamma=loss_fn.cost_gamma,
-    cost_jpi_index=loss_fn.cost_jpi_index,
-)
+matcher = HungarianMatcher()
 
 indices = matcher(prepared_preds, prepared_targets)
 pred_idx, target_idx = indices[0]

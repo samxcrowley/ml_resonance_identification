@@ -24,22 +24,22 @@ def plot_results(path, title, out_path):
     ax_loss.grid(True, alpha=0.3)
 
     # precision
-    ax_prec = fig.add_subplot(gs[1, 0])
-    ax_prec.plot(epochs, df["val_precision"], color="tab:orange", label="Precision")
-    ax_prec.set_ylim(0, 1.05)
-    ax_prec.set_title("Precision")
-    ax_prec.set_xlabel("Epoch")
-    ax_prec.set_ylabel("Precision")
-    ax_prec.grid(True, alpha=0.3)
+    # ax_prec = fig.add_subplot(gs[1, 0])
+    # ax_prec.plot(epochs, df["val_precision"], color="tab:orange", label="Precision")
+    # ax_prec.set_ylim(0, 1.05)
+    # ax_prec.set_title("Precision")
+    # ax_prec.set_xlabel("Epoch")
+    # ax_prec.set_ylabel("Precision")
+    # ax_prec.grid(True, alpha=0.3)
 
-    # recall
-    ax_rec = fig.add_subplot(gs[1, 1])
-    ax_rec.plot(epochs, df["val_recall"], color="tab:green", label="Recall")
-    ax_rec.set_ylim(0, 1.05)
-    ax_rec.set_title("Recall")
-    ax_rec.set_xlabel("Epoch")
-    ax_rec.set_ylabel("Recall")
-    ax_rec.grid(True, alpha=0.3)
+    # # recall
+    # ax_rec = fig.add_subplot(gs[1, 1])
+    # ax_rec.plot(epochs, df["val_recall"], color="tab:green", label="Recall")
+    # ax_rec.set_ylim(0, 1.05)
+    # ax_rec.set_title("Recall")
+    # ax_rec.set_xlabel("Epoch")
+    # ax_rec.set_ylabel("Recall")
+    # ax_rec.grid(True, alpha=0.3)
 
     plt.savefig(out_path, dpi=150, bbox_inches="tight")
     print(f"Saved plots to {out_path}.")
@@ -57,11 +57,6 @@ def display_tensor_with_targets(tensor, target, name):
 
     plt.imshow(data, cmap='viridis', aspect='auto', origin='lower', interpolation='nearest')
     plt.colorbar()
-
-    # overlay cropped pixels
-    cropped_overlay = np.zeros((*data.shape, 4))
-    cropped_overlay[mask == 0] = [0, 0, 0, 1]
-    plt.imshow(cropped_overlay, aspect='auto', origin='lower', interpolation='nearest')
 
     # draw resonance lines
     n_energy = data.shape[0]

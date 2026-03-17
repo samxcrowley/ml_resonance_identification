@@ -32,7 +32,7 @@ class DETR_Model(nn.Module):
         self.predict_gamma = params.get('predict_gamma', True)
         self.max_gammas = self.header.max_channels
 
-        self.n_queries = data.MAX_RESONANCES*2
+        self.n_queries = 30
         self.n_jpi_sets = self.header.n_jpi_sets
 
         self.pos_enc_max_len = 1000
@@ -67,10 +67,13 @@ class DETR_Model(nn.Module):
             self.d_transformer
         )
 
-        # classification
-        self.class_head = nn.Linear(
-            self.d_transformer,
-            2
+        # classification (MLP)
+        self.class_head = nn.Sequential(
+            nn.Linear(self.d_transformer, self.d_transformer),
+            nn.ReLU(),
+            nn.Linear(self.d_transformer, self.d_transformer),
+            nn.ReLU(),
+            nn.Linear(self.d_transformer, 2)
         )
 
         # regression (MLP)

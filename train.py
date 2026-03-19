@@ -10,10 +10,12 @@ import json
 import os
 from datetime import datetime
 from model.detr import DETR_Model, DETR_Loss
+from model.set_detr import SetDETR_Model
 from process.header import Header
 
 MODELS = {
     'detr': DETR_Model,
+    'set_detr': SetDETR_Model,
 }
 
 train_stats = [
@@ -178,42 +180,46 @@ def train(params):
     best_model_state = None
     best_optimiser_state = None
 
-    for epoch in range(1, n_epochs + 1):
+    try:
+        for epoch in range(1, n_epochs + 1):
 
-        train_m = run_epoch(epoch, model, train_loader, loss_fn, False, optimiser, device)
-        val_m = run_epoch(epoch, model, val_loader, loss_fn, True, optimiser, device)
+            train_m = run_epoch(epoch, model, train_loader, loss_fn, False, optimiser, device)
+            val_m = run_epoch(epoch, model, val_loader, loss_fn, True, optimiser, device)
 
-        if scheduler_type == 'cosine':
-            scheduler.step()
-        else:
-            scheduler.step(val_m['total_loss'])
+            if scheduler_type == 'cosine':
+                scheduler.step()
+            else:
+                scheduler.step(val_m['total_loss'])
 
-        results['epoch'].append(epoch)
+            results['epoch'].append(epoch)
 
-        for stat in train_stats:
-            results[f'train_{stat}'].append(train_m[stat])
-            results[f'val_{stat}'].append(val_m[stat])
+            for stat in train_stats:
+                results[f'train_{stat}'].append(train_m[stat])
+                results[f'val_{stat}'].append(val_m[stat])
 
-        # track best model by val loss
-        if val_m['total_loss'] < best_val_loss:
-            best_val_loss = val_m['total_loss']
-            best_model_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
-            best_optimiser_state = optimiser.state_dict()
+            # track best model by val loss
+            if val_m['total_loss'] < best_val_loss:
+                best_val_loss = val_m['total_loss']
+                best_model_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+                best_optimiser_state = optimiser.state_dict()
 
-        if epoch % epoch_n_print == 0:
-            print(
-                f'Epoch {epoch:03d}/{n_epochs} '
-                f'| Train {train_m["total_loss"]:.4f} '
-                f'| Val {val_m["total_loss"]:.4f} '
-                f'| Train C {train_m["class_loss"]:.4f} '
-                f'| Val C {val_m["class_loss"]:.4f} '
-                f'| Train E {train_m["energy_loss"]:.4f} '
-                f'| Val E {val_m["energy_loss"]:.4f} '
-                f'| Train J {train_m["jpi_index_loss"]:.4f} '
-                f'| Val J {val_m["jpi_index_loss"]:.4f} '
-                f'| Train G {train_m["gamma_loss"]:.4f} '
-                f'| Val G {val_m["gamma_loss"]:.4f}'
-            )
+            if epoch % epoch_n_print == 0:
+                print(
+                    f'Epoch {epoch:03d}/{n_epochs} '
+                    f'| Train {train_m["total_loss"]:.4f} '
+                    f'| Val {val_m["total_loss"]:.4f} '
+                    f'| Train C {train_m["class_loss"]:.4f} '
+                    f'| Val C {val_m["class_loss"]:.4f} '
+                    f'| Train E {train_m["energy_loss"]:.4f} '
+                    f'| Val E {val_m["energy_loss"]:.4f} '
+                    f'| Train J {train_m["jpi_index_loss"]:.4f} '
+                    f'| Val J {val_m["jpi_index_loss"]:.4f} '
+                    f'| Train G {train_m["gamma_loss"]:.4f} '
+                    f'| Val G {val_m["gamma_loss"]:.4f}'
+                )
+
+    except KeyboardInterrupt:
+        print(f'\nTraining interrupted at epoch {epoch}. Saving results...')
 
     t_end = datetime.now()
     duration = t_end - t_start

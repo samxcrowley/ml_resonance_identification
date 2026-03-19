@@ -8,10 +8,16 @@ import matplotlib
 import matplotlib.pyplot as plt
 import process.data as data
 from model.detr import DETR_Model, DETR_Loss, HungarianMatcher
+from model.set_detr import SetDETR_Model
 from process.header import Header
 import process.transforms as transforms
 
-def evaluate(run_dir, test_data_path, confidence_threshold=0.5):
+MODELS = {
+    'detr': DETR_Model,
+    'set_detr': SetDETR_Model,
+}
+
+def evaluate(run_dir, confidence_threshold=0.5, test_data_path='data/preprocessed/nlevels_20_test.pt'):
 
     with open(f'{run_dir}/params.json', 'r') as f:
         params = json.load(f)
@@ -21,7 +27,8 @@ def evaluate(run_dir, test_data_path, confidence_threshold=0.5):
     transform = transforms.get_augment_transform(noise_sigma_log10=0.0, amplitude_scale=0.0)
 
     header = Header(params['header'])
-    model = DETR_Model(header, params)
+    model_cls = MODELS[params['model']]
+    model = model_cls(header, params)
     checkpoint = torch.load(f'{run_dir}/checkpoint.pt', weights_only=False)
     state_dict = checkpoint['model']
     model.load_state_dict(state_dict)
@@ -48,7 +55,6 @@ def evaluate(run_dir, test_data_path, confidence_threshold=0.5):
 
     true_counts = []
     pred_counts = []
-
 
     with torch.no_grad():
 
@@ -237,10 +243,9 @@ def plot_results(results, raw, run_dir):
 if __name__ == '__main__':
 
     run_dir = sys.argv[1]
-    test_data_path = sys.argv[2]
-    confidence_threshold = float(sys.argv[3])
+    confidence_threshold = float(sys.argv[2])
 
-    results, raw = evaluate(run_dir, test_data_path, confidence_threshold)
+    results, raw = evaluate(run_dir, confidence_threshold)
 
     print_results(results)
 

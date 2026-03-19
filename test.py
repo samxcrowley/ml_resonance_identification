@@ -30,13 +30,11 @@ def evaluate(run_dir, test_data_path, confidence_threshold=0.5):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model.to(device)
 
-    dataset = data.ResonanceDataset(test_data_path, 0.0, transform)
+    dataset = data.ResonanceDataset(test_data_path, None, transform)
     loader = DataLoader(dataset, batch_size=64, shuffle=False)
 
     loss_fn = model.get_loss_fn()
     matcher = HungarianMatcher()
-
-    eval_tolerance = params.get('eval_tolerance', 0.05)
 
     total_true = 0
     total_tp = 0
@@ -50,6 +48,7 @@ def evaluate(run_dir, test_data_path, confidence_threshold=0.5):
 
     true_counts = []
     pred_counts = []
+
 
     with torch.no_grad():
 
@@ -78,38 +77,51 @@ def evaluate(run_dir, test_data_path, confidence_threshold=0.5):
                     total_fp += n_confident
                     continue
 
+                pred_gamma = preds['gamma'][n][pred_idx]
+                target_gamma = targets[n]['gamma'][target_idx].to(device)
+                gamma_mask = targets[n]['gamma_mask'][target_idx].to(device)
+
+                # tolerance is T * max partial width (width is log and normalised)
+                T = 0.05
+                max_partial_gamma = target_gamma.max(dim=-1).values
+                eval_tolerance = T * max_partial_gamma
+
                 pred_energy = preds['energy'][n][pred_idx].squeeze(-1)
                 target_energy = targets[n]['energy'][target_idx].squeeze(-1).to(device)
                 close = (pred_energy - target_energy).abs() < eval_tolerance
 
-                tp_mask = close & (confidences[pred_idx] > confidence_threshold)
+                pred_jpi = preds['jpi_index'][n][pred_idx].argmax(dim=-1)
+                target_jpi = targets[n]['jpi_index'][target_idx].squeeze(-1).long().to(device)
+                jpi_match = (pred_jpi == target_jpi)
+
+                # correct prediction is defined as:
+                # jpi matched exactly
+                # energy within tolerance (see above)
+                # confidence greater than threshold
+                tp_mask = close & jpi_match & (confidences[pred_idx] > confidence_threshold)
                 tp = tp_mask.sum().item()
                 total_tp += tp
                 total_fp += n_confident - tp
 
-                if tp > 0:
-                    
-                    energy_errors.append((pred_energy - target_energy).abs()[tp_mask].cpu())
+                matched_energy_err = (pred_energy - target_energy).abs()[tp_mask]
+                if matched_energy_err.numel() > 0:
+                    energy_errors.append(matched_energy_err.cpu())
 
-                    pred_gamma = preds['gamma'][n][pred_idx]
-                    target_gamma = targets[n]['gamma'][target_idx].to(device)
-                    gamma_mask = targets[n]['gamma_mask'][target_idx].to(device)
-                    nan_mask = target_gamma.isnan()
-                    if nan_mask.any():
-                        target_gamma = target_gamma.clone()
-                        target_gamma[nan_mask] = 0.0
-                        gamma_mask = gamma_mask.clone()
-                        gamma_mask[nan_mask] = 0.0
-                    gamma_diff = (pred_gamma - target_gamma).abs()[tp_mask]
-                    gamma_m = gamma_mask[tp_mask].bool()
-                    gamma_diff = gamma_diff[gamma_m]
-                    if gamma_diff.numel() > 0:
-                        gamma_errors.append(gamma_diff.cpu())
+                nan_mask = target_gamma.isnan()
+                if nan_mask.any():
+                    target_gamma = target_gamma.clone()
+                    target_gamma[nan_mask] = 0.0
+                    gamma_mask = gamma_mask.clone()
+                    gamma_mask[nan_mask] = 0.0
+                gamma_diff = (pred_gamma - target_gamma).abs()[tp_mask]
+                gamma_m = gamma_mask[tp_mask].bool()
+                gamma_diff = gamma_diff[gamma_m]
+                if gamma_diff.numel() > 0:
+                    gamma_errors.append(gamma_diff.cpu())
 
-                    pred_jpi = preds['jpi_index'][n][pred_idx].argmax(dim=-1)
-                    target_jpi = targets[n]['jpi_index'][target_idx].squeeze(-1).long().to(device)
-                    jpi_correct += (pred_jpi == target_jpi)[tp_mask].sum().item()
-                    jpi_total += tp
+                # jpi accuracy will always be 1.0 for now, as both of these are equal
+                jpi_correct += jpi_match[tp_mask].sum().item()
+                jpi_total += tp
 
     total_fn = total_true - total_tp
     total_tn = total_slots - total_tp - total_fp - total_fn

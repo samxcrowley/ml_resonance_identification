@@ -26,7 +26,6 @@ class DETR_Model(nn.Module):
         self.n_head = params['n_head']
         self.n_layers = params['n_layers']
         self.dropout_p = params['dropout_p']
-        self.eval_tolerance = params['eval_tolerance']
         self.confidence_threshold = params['confidence_threshold']
 
         self.predict_gamma = params.get('predict_gamma', True)
@@ -153,6 +152,14 @@ class DETR_Loss(nn.Module):
 
         self.matcher = HungarianMatcher()
 
+    def _focal_loss(self, pred_logits, targets, alpha=0.25, gamma=2.0):
+        ce = F.cross_entropy(pred_logits, targets, reduction='none')
+        probs = pred_logits.softmax(-1)
+        p_t = probs[range(len(targets)), targets]
+        focal_weight = (1 - p_t) ** gamma
+        alpha_t = torch.where(targets == 1, alpha, 1 - alpha)
+        return (alpha_t * focal_weight * ce).mean()
+
     def prepare_targets(self, targets):
 
         class_targets = targets['class']
@@ -205,9 +212,7 @@ class DETR_Loss(nn.Module):
             if len(pred_idx) > 0:
                 target_classes[pred_idx] = 1
 
-            weight = torch.tensor(self.class_weights, device=device)
-
-            loss_class += F.cross_entropy(pred_classes, target_classes, weight=weight)
+            loss_class += self._focal_loss(pred_classes, target_classes)
 
             if len(pred_idx) > 0:
 

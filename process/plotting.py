@@ -90,7 +90,7 @@ def display_tensor(tensor, name):
 
 # display tensor as a grid of line plots, one per channel
 # tensor shape: [n_y, n_channels] where n_channels = n_pp_combos * n_angles
-def display_tensor_grid(tensor, name, n_pp_combos=9, n_angles=6):
+def display_tensor_grid(tensor, name, n_pp_combos=None, n_angles=None):
 
     grid = tensor.numpy()
     n_y = grid.shape[0]

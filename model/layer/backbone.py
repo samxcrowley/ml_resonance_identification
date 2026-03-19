@@ -6,8 +6,8 @@ class Backbone(nn.Module):
 
         super().__init__()
 
-        # input: [batch, 2, 512, n_channels=54]
-        # n_channels: 9 pp_combos * 6 angles
+        # input: [batch, 2, 512, n_channels]
+        # n_channels: n_pp_combos * n_angles
 
         self.conv1 = nn.Sequential(
             nn.Conv2d(n_in_channels, 32, kernel_size=5, stride=(1, 3), padding=2),

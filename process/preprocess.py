@@ -18,14 +18,14 @@ def _process_file(filepath):
     t_load = time.time() - t0
 
     t0 = time.time()
-    tensors_list, file_targets = data.process_json(raw_data)
+    tensors_list, file_targets, metadata = data.process_json(raw_data)
     t_proc = time.time() - t0
 
     n_samples = len(tensors_list)
 
     # save to temp file to avoid large IPC transfers
     tmp = tempfile.NamedTemporaryFile(suffix='.pt', delete=False)
-    torch.save({'tensors': tensors_list, 'targets': file_targets}, tmp.name)
+    torch.save({'tensors': tensors_list, 'targets': file_targets, 'metadata': metadata}, tmp.name)
     tmp.close()
 
     return os.path.basename(filepath), tmp.name, n_samples, t_load, t_proc
@@ -67,6 +67,7 @@ def preprocess(max_resonances, workers=1, train_split=0.8):
     first_result = torch.load(tmp_results[0][0], weights_only=False)
     sample_shape = first_result['tensors'][0].shape
     target_shapes = {k: v.shape[1:] for k, v in first_result['targets'].items()}
+    metadata = first_result['metadata']
     del first_result
     gc.collect()
 
@@ -103,15 +104,16 @@ def preprocess(max_resonances, workers=1, train_split=0.8):
     train_path = os.path.join(out_dir, f'nlevels_{max_resonances}_train.pt')
     test_path = os.path.join(out_dir, f'nlevels_{max_resonances}_test.pt')
 
-    # save train split, then free it before creating test split
     torch.save({
         'tensors': all_tensors[train_idx],
         'targets': {k: all_targets[k][train_idx] for k in target_keys},
+        'metadata': metadata,
     }, train_path)
 
     torch.save({
         'tensors': all_tensors[test_idx],
         'targets': {k: all_targets[k][test_idx] for k in target_keys},
+        'metadata': metadata,
     }, test_path)
 
 if __name__ == '__main__':

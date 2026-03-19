@@ -18,16 +18,18 @@ def get_augment_transform(noise_sigma_log10=0.1, amplitude_scale=0.2):
 
     return transform
 
-def _crop(tensor, target, crop_energy=0.0, crop_angle=False, crop_channel=False):
+def _crop(tensor, target, metadata, crop_energy=0.0, crop_angle=False, crop_channel=False):
 
     E, C = tensor.shape
 
-    n_entrances = 3
-    n_exits = 3
+    n_entrances = metadata['n_entrances']
+    n_exits = metadata['n_exits']
     n_pp = n_entrances * n_exits
-    n_angles = C // n_pp
+    n_angles = metadata['n_angles']
 
-    if crop_energy == 0.0 and not crop_angle and not crop_channel:
+    do_crop = np.random.rand() < 0.5
+
+    if not do_crop or (crop_energy == 0.0 and not crop_angle and not crop_channel):
         mask = torch.ones(E, C)
         return torch.stack([tensor, mask], dim=0), target
 
@@ -59,11 +61,11 @@ def _crop(tensor, target, crop_energy=0.0, crop_angle=False, crop_channel=False)
                     end = start + n_angles
                     mask[:, start:end] = 0.0
 
-    # drop 1-3 angles across all channels
+    # drop 0-3 angles across all channels
     if crop_angle:
         max_drop = min(3, n_angles - 3)
         if max_drop > 0:
-            n_drop = np.random.randint(1, max_drop + 1)
+            n_drop = np.random.randint(0, max_drop + 1)
             drop_indices = np.random.choice(n_angles, size=n_drop, replace=False)
             for a in drop_indices:
                 for pp in range(n_pp):

@@ -13,63 +13,81 @@ GAMMA_LOG_MIN = -8.0 # log10(1e-8)
 GAMMA_LOG_MAX = 2.0 # log10(100 MeV)
 
 # process experimental JSON data (no targets)
-# returns tensor
-# spreads continuous angles evenly across all 54 channels
-def process_exp_json(data, n_y=512, n_channels=54, clamp=1e-8):
+# returns tensors and metadata
+# angles are continuous and binned into n_angle_bins
+def process_exp_json(data, n_y=512, n_angle_bins=15, clamp=1e-8):
 
     tensors = []
 
-    data = data['data']
+    samples = data['data']
 
-    for sample in data:
+    # get pp combos
+    pp_combos = sorted(set((s['pp_in_index'], s['pp_out_index']) for s in samples))
+    n_channels = len(pp_combos) * n_angle_bins
+
+    for sample in samples:
 
         points = sample['points']
+        pp_in = sample['pp_in_index']
+        pp_out = sample['pp_out_index']
+        pp_idx = pp_combos.index((pp_in, pp_out))
 
         cn_ex_all = np.array([p['cn_ex'] for p in points])
         e_min = cn_ex_all.min()
         e_max = cn_ex_all.max()
         e_uniform = np.linspace(e_min, e_max, n_y)
 
-        # create angle bins that span the data's angular range
+        # bin continuous angles
         theta_all = np.array([p['theta_cm_out'] for p in points])
-        angle_bins = np.linspace(theta_all.min(), theta_all.max(), n_channels + 1)
+        angle_bins = np.linspace(theta_all.min(), theta_all.max(), n_angle_bins + 1)
 
-        # bin points by angle
-        point_groups = [[] for _ in range(n_channels)]
+        # group points by angle bin
+        point_groups = [[] for _ in range(n_angle_bins)]
         for p in points:
             bin_idx = np.searchsorted(angle_bins[1:], p['theta_cm_out'], side='right')
-            bin_idx = min(bin_idx, n_channels - 1)
+            bin_idx = min(bin_idx, n_angle_bins - 1)
             point_groups[bin_idx].append(p)
 
         # build grid: 1D interpolation per angle bin
         grid = np.full((n_y, n_channels), np.log10(clamp), dtype=np.float32)
 
-        for ch_idx in range(n_channels):
+        for a_idx in range(n_angle_bins):
 
-            if not point_groups[ch_idx]:
+            if not point_groups[a_idx]:
                 continue
 
-            e = np.array([p['cn_ex'] for p in point_groups[ch_idx]])
-            z = np.array([np.log10(max(p['dsdO'], clamp)) for p in point_groups[ch_idx]])
+            ch_idx = pp_idx * n_angle_bins + a_idx
+
+            e = np.array([p['cn_ex'] for p in point_groups[a_idx]])
+            z = np.array([np.log10(max(p['dsdO'], clamp)) for p in point_groups[a_idx]])
 
             order = np.argsort(e)
 
             grid[:, ch_idx] = np.interp(
-                e_uniform,
-                e[order],
-                z[order],
-                left=np.log10(clamp),
-                right=np.log10(clamp)
+                e_uniform, e[order], z[order],
+                left=np.log10(clamp), right=np.log10(clamp)
             )
 
         grid = np.nan_to_num(grid, nan=np.log10(clamp))
         tensors.append(torch.tensor(grid, dtype=torch.float32))
 
-    return tensors
+    entrances = sorted(set(pp[0] for pp in pp_combos))
+    exits = sorted(set(pp[1] for pp in pp_combos))
 
-# process loaded JSON list into (tensors [list], targets [dict])
+    metadata = {
+        'n_entrances': len(entrances),
+        'n_exits': len(exits),
+        'n_angles': n_angle_bins,
+        'n_pp_combos': len(pp_combos),
+        'pp_combos': pp_combos,
+        'angles': angle_bins[:-1].tolist(),
+    }
+
+    return tensors, metadata
+
+# process loaded JSON list into (tensors [list], targets [dict], metadata [dict])
 # tensor shape: [n_y, n_channels]
-# where n_channels = n_pp_combos * n_angles (for now, 9 * 6 = 54)
+# where n_channels = n_pp_combos * n_angles
 def process_json(data, n_y=512, clamp=1e-8):
 
     tensors = []
@@ -83,15 +101,15 @@ def process_json(data, n_y=512, clamp=1e-8):
 
     header = Header()
 
+    # get pp combos and angles from first sample
+    first_points = data[0]['observable_sets'][0]['points']
+    pp_combos = sorted(set((p['pp_in_index'], p['pp_out_index']) for p in first_points))
+    angles = sorted(set(p['theta_3_cm'] for p in first_points))
+    n_channels = len(pp_combos) * len(angles)
+
     for sample in data:
 
         points = sample['observable_sets'][0]['points']
-
-        # get pp combinations and angles
-        pp_combos = sorted(set((p['pp_in_index'], p['pp_out_index']) for p in points))
-        angles = sorted(set(p['theta_3_cm'] for p in points))
-
-        n_channels = len(pp_combos) * len(angles) # 54
 
         cn_ex_all = np.array([p['cn_ex'] for p in points])
         e_min = cn_ex_all.min()
@@ -199,7 +217,19 @@ def process_json(data, n_y=512, clamp=1e-8):
         'n_res': torch.tensor(n_res_targets, dtype=torch.float32),
     }
 
-    return tensors, targets
+    entrances = sorted(set(pp[0] for pp in pp_combos))
+    exits = sorted(set(pp[1] for pp in pp_combos))
+
+    metadata = {
+        'n_entrances': len(entrances),
+        'n_exits': len(exits),
+        'n_angles': len(angles),
+        'n_pp_combos': len(pp_combos),
+        'pp_combos': pp_combos,
+        'angles': angles,
+    }
+
+    return tensors, targets, metadata
 
 class ResonanceDataset(Dataset):
 
@@ -210,6 +240,14 @@ class ResonanceDataset(Dataset):
 
         self.tensors = saved['tensors']
         self.targets = saved['targets']
+
+        default_metadata = {
+            'n_entrances': 3, 'n_exits': 3,
+            'n_angles': self.tensors[0].shape[1] // 9,
+        }
+
+        self.metadata = saved.get('metadata', default_metadata)
+
         self.crop_params = crop_params or {}
         self.transform = transform
 
@@ -222,7 +260,7 @@ class ResonanceDataset(Dataset):
         target = {key: self.targets[key][idx] for key in self.targets}
 
         # crop
-        tensor, target = transforms._crop(tensor, target, **self.crop_params)
+        tensor, target = transforms._crop(tensor, target, self.metadata, **self.crop_params)
 
         # initial transform
         if self.transform:

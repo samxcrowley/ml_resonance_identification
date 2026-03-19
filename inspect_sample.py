@@ -17,7 +17,7 @@ header = Header()
 with open(PARAMS_PATH, 'r') as f:
     params = json.load(f)
 
-d = ResonanceDataset(path=DATASET_PATH, max_crop=0.0)
+d = ResonanceDataset(path=DATASET_PATH)
 
 model = DETR_Model(header, params)
 checkpoint = torch.load(CHECKPOINT_PATH, weights_only=False)

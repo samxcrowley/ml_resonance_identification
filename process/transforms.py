@@ -18,40 +18,56 @@ def get_augment_transform(noise_sigma_log10=0.1, amplitude_scale=0.2):
 
     return transform
 
-def _crop(tensor, target, strength=0.0):
+def _crop(tensor, target, crop_energy=0.0, crop_angle=False, crop_channel=False):
 
     E, C = tensor.shape
 
-    n_pp = 9
+    n_entrances = 3
+    n_exits = 3
+    n_pp = n_entrances * n_exits
     n_angles = C // n_pp
 
-    if strength == 0.0:
+    if crop_energy == 0.0 and not crop_angle and not crop_channel:
         mask = torch.ones(E, C)
         return torch.stack([tensor, mask], dim=0), target
 
-    # pick a fraction of energies to cut out
-    E_crop_ratio = np.random.rand() * strength
-    E_keep_ratio = 1.0 - E_crop_ratio
-    e_start = np.random.rand() * (1.0 - E_keep_ratio)
-    e_end = e_start + E_keep_ratio
-    e_idx_start = int(e_start * E)
-    e_idx_end = int(e_end * E)
     mask = torch.ones(E, C)
-    mask[:e_idx_start, :] = 0.0
-    mask[e_idx_end:, :] = 0.0
 
-    # drop random channels
-    for n in range(n_pp):
-        if np.random.rand() <= strength:
-            start = n * n_angles
-            end = start + n_angles
-            mask[:, start:end] = 0.0
+    e_start = 0.0
+    e_end = 1.0
 
-    # crop out angles (same angles dropped across all 9 channels)
-    for a in range(n_angles):
-        if np.random.rand() <= (strength / 2):
-            for pp in range(n_pp):
-                mask[:, pp * n_angles + a] = 0.0
+    # pick a fraction of energies to cut from the top and bottom
+    if crop_energy > 0.0:
+        E_crop_ratio = np.random.rand() * crop_energy
+        E_keep_ratio = 1.0 - E_crop_ratio
+        e_start = np.random.rand() * (1.0 - E_keep_ratio)
+        e_end = e_start + E_keep_ratio
+        e_idx_start = int(e_start * E)
+        e_idx_end = int(e_end * E)
+        mask[:e_idx_start, :] = 0.0
+        mask[e_idx_end:, :] = 0.0
+
+    # drop entrance channels
+    if crop_channel:
+        n_keep = np.random.randint(1, n_entrances + 1)
+        kept_entrances = np.random.choice(n_entrances, size=n_keep, replace=False)
+        for ent in range(n_entrances):
+            if ent not in kept_entrances:
+                for ext in range(n_exits):
+                    pp = ent * n_exits + ext
+                    start = pp * n_angles
+                    end = start + n_angles
+                    mask[:, start:end] = 0.0
+
+    # drop 1-3 angles across all channels
+    if crop_angle:
+        max_drop = min(3, n_angles - 3)
+        if max_drop > 0:
+            n_drop = np.random.randint(1, max_drop + 1)
+            drop_indices = np.random.choice(n_angles, size=n_drop, replace=False)
+            for a in drop_indices:
+                for pp in range(n_pp):
+                    mask[:, pp * n_angles + a] = 0.0
 
     # set cropped values to the floor (-8 in log10)
     cropped_tensor = torch.stack([torch.where(mask > 0, tensor, torch.tensor(-8.0)), mask], dim=0)
@@ -62,7 +78,6 @@ def _crop(tensor, target, strength=0.0):
     masked_tensor = tensor * mask
 
     res_mask = torch.zeros(max_resonances, dtype=torch.bool)
-    n_kept = res_mask.sum().item()
 
     for i in range(max_resonances):
 
@@ -72,13 +87,14 @@ def _crop(tensor, target, strength=0.0):
             continue
 
         e_idx = int(e * E)
-        # e_idx = min(e_idx, E - 1)
 
         # check if any unmasked column has signal above the floor at this energy
         row_mask = mask[e_idx]
         row_vals = tensor[e_idx]
         if (row_vals[row_mask > 0] > -8.0).any():
             res_mask[i] = True
+
+    n_kept = res_mask.sum().item()
 
     # pad filtered targets back to max_resonances
     cropped_target = {}

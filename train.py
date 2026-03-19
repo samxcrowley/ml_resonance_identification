@@ -80,7 +80,11 @@ def train(params):
     header_name = params['header']
     header = Header(filename=header_name)
 
-    max_crop = params.get('max_crop', False)
+    crop_params = {
+        'crop_energy': params.get('crop_energy', 0.0),
+        'crop_angle': params.get('crop_angle', False),
+        'crop_channel': params.get('crop_channel', False),
+    }
 
     model_cls = MODELS[params['model']]
     model = model_cls(header, params)
@@ -95,7 +99,7 @@ def train(params):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f'Using device: {device}\n')
 
-    base_dataset = data.ResonanceDataset(data_path, max_crop, transform)
+    base_dataset = data.ResonanceDataset(data_path, crop_params, transform)
     dataset = base_dataset
 
     # -1 in params['n_subset'] indicates to use the entire dataset
@@ -109,11 +113,7 @@ def train(params):
                                      [train_size, val_size], \
                                         generator=torch.Generator().manual_seed(seed))
 
-    uncropped_val_dataset = data.ResonanceDataset(
-        data_path,
-        0.0,
-        transforms.get_augment_transform(noise_sigma_log10=0.0, amplitude_scale=0.0)
-    )
+    uncropped_val_dataset = data.ResonanceDataset(data_path)
     if n_subset != -1:
         uncropped_val_dataset = Subset(uncropped_val_dataset, np.arange(n_subset))
     uncropped_val_dataset = Subset(uncropped_val_dataset, val_dataset.indices)
@@ -129,7 +129,7 @@ def train(params):
                               persistent_workers=True,
                               prefetch_factor=4)
 
-    val_loader = DataLoader(val_dataset,
+    val_loader = DataLoader(uncropped_val_dataset,
                             batch_size=batch_size,
                             shuffle=False,
                             num_workers=num_workers,
@@ -143,7 +143,7 @@ def train(params):
 
     resume_from = params.get('resume_from', None)
     if resume_from:
-        checkpoint = torch.load(resume_from, map_location=device, weights_only=True)
+        checkpoint = torch.load(resume_from, map_location=device, weights_only=False)
         model.load_state_dict(checkpoint['model'])
         optimiser.load_state_dict(checkpoint['optimiser'])
         for pg in optimiser.param_groups:
@@ -202,15 +202,17 @@ def train(params):
 
         if epoch % epoch_n_print == 0:
             print(
-                f'Epoch {epoch}/{n_epochs} '
-                f'| Train loss {train_m["total_loss"]:.4f} '
-                f'| Val loss {val_m["total_loss"]:.4f} '
-                f'| Train E loss {train_m["energy_loss"]:.4f} '
-                f'| Val E loss {val_m["energy_loss"]:.4f} '
-                f'| Train J loss {train_m["jpi_index_loss"]:.4f} '
-                f'| Val J loss {val_m["jpi_index_loss"]:.4f} '
-                f'| Train G loss {train_m["gamma_loss"]:.4f} '
-                f'| Val G loss {val_m["gamma_loss"]:.4f}'
+                f'Epoch {epoch:03d}/{n_epochs} '
+                f'| Train {train_m["total_loss"]:.4f} '
+                f'| Val {val_m["total_loss"]:.4f} '
+                f'| Train C {train_m["class_loss"]:.4f} '
+                f'| Val C {val_m["class_loss"]:.4f} '
+                f'| Train E {train_m["energy_loss"]:.4f} '
+                f'| Val E {val_m["energy_loss"]:.4f} '
+                f'| Train J {train_m["jpi_index_loss"]:.4f} '
+                f'| Val J {val_m["jpi_index_loss"]:.4f} '
+                f'| Train G {train_m["gamma_loss"]:.4f} '
+                f'| Val G {val_m["gamma_loss"]:.4f}'
             )
 
     t_end = datetime.now()

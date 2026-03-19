@@ -20,7 +20,7 @@ class DecoderLayer(nn.Module):
         self.linear2 = nn.Linear(n_hidden, d_model)
         self.norm3 = nn.LayerNorm(d_model)
 
-    def forward(self, x, enc, pos_enc, query_pos):
+    def forward(self, x, enc, pos_enc, query_pos, memory_key_padding_mask=None):
 
         # sublayer 1: self-attention
 
@@ -43,7 +43,7 @@ class DecoderLayer(nn.Module):
         k = (enc + pos_enc)
         v = enc
 
-        cross_att_out, cross_att = self.cross_attention(q, k, v)
+        cross_att_out, cross_att = self.cross_attention(q, k, v, key_padding_mask=memory_key_padding_mask)
         x = residual + self.dropout2(cross_att_out)
 
         # sublayer 3: feed-forward

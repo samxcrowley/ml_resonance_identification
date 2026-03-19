@@ -17,10 +17,10 @@ class Transformer_Encoder_Model(nn.Module):
 
         self.norm = nn.LayerNorm(d_model)
 
-    def forward(self, x, pos_enc):
+    def forward(self, x, pos_enc, key_padding_mask=None):
 
         for layer in self.layers:
-            x = layer(x, pos_enc)
+            x = layer(x, pos_enc, key_padding_mask=key_padding_mask)
 
         x = self.norm(x)
 

@@ -17,11 +17,11 @@ class Transformer_Decoder_Model(nn.Module):
 
         self.norm = nn.LayerNorm(d_model)
 
-    def forward(self, x, enc, pos_enc, query_pos):
+    def forward(self, x, enc, pos_enc, query_pos, memory_key_padding_mask=None):
 
         for layer in self.layers:
 
-            x, cross_att = layer(x, enc, pos_enc, query_pos)
+            x, cross_att = layer(x, enc, pos_enc, query_pos, memory_key_padding_mask=memory_key_padding_mask)
 
         x = self.norm(x)
 

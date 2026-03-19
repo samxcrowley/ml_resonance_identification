@@ -16,7 +16,7 @@ class EncoderLayer(nn.Module):
         self.linear2 = nn.Linear(n_hidden, d_model)
         self.norm2 = nn.LayerNorm(d_model)
 
-    def forward(self, x, pos_enc):
+    def forward(self, x, pos_enc, key_padding_mask=None):
 
         # sublayer 1: attention
 
@@ -27,7 +27,7 @@ class EncoderLayer(nn.Module):
         k = (x + pos_enc)
         v = x
 
-        att_out, _ = self.attention(q, k, v)
+        att_out, _ = self.attention(q, k, v, key_padding_mask=key_padding_mask)
         x = residual + self.dropout1(att_out)
 
         # sublayer 2: feed-forward

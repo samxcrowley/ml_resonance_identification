@@ -17,7 +17,7 @@ MODELS = {
     'set_detr': SetDETR_Model,
 }
 
-def evaluate(run_dir, confidence_threshold=0.5, test_data_path='data/preprocessed/nlevels_20_test.pt'):
+def evaluate(run_dir, crop_strength=0.0, confidence_threshold=0.5, test_data_path='data/preprocessed/nlevels_20_test.pt'):
 
     with open(f'{run_dir}/params.json', 'r') as f:
         params = json.load(f)
@@ -37,7 +37,15 @@ def evaluate(run_dir, confidence_threshold=0.5, test_data_path='data/preprocesse
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model.to(device)
 
-    dataset = data.ResonanceDataset(test_data_path, None, transform)
+    crop_params = {}
+    if crop_strength > 0.0:
+        crop_params = {
+            'crop_energy': crop_strength,
+            'crop_angle': True,
+            'crop_channel': True
+        }
+
+    dataset = data.ResonanceDataset(test_data_path, crop_params, transform)
     loader = DataLoader(dataset, batch_size=64, shuffle=False)
 
     loss_fn = model.get_loss_fn()
@@ -243,9 +251,10 @@ def plot_results(results, raw, run_dir):
 if __name__ == '__main__':
 
     run_dir = sys.argv[1]
-    confidence_threshold = float(sys.argv[2])
+    crop_strength = float(sys.argv[2])
+    confidence_threshold = float(sys.argv[3])
 
-    results, raw = evaluate(run_dir, confidence_threshold)
+    results, raw = evaluate(run_dir, crop_strength, confidence_threshold)
 
     print_results(results)
 

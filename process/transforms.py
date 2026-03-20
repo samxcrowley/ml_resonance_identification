@@ -29,11 +29,12 @@ def _crop(tensor, target, metadata, crop_energy=0.0, crop_angle=False, crop_chan
 
     do_crop = np.random.rand() < 0.5
 
-    if not do_crop or (crop_energy == 0.0 and not crop_angle and not crop_channel):
-        mask = torch.ones(E, C)
-        return torch.stack([tensor, mask], dim=0), target
+    # mask out padding
+    FLOOR = -7.9
+    mask = (tensor > FLOOR).float()
 
-    mask = torch.ones(E, C)
+    if not do_crop or (crop_energy == 0.0 and not crop_angle and not crop_channel):
+        return torch.stack([tensor, mask], dim=0), target
 
     e_start = 0.0
     e_end = 1.0

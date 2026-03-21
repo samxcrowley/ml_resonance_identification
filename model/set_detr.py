@@ -124,6 +124,11 @@ class SetDETR_Model(nn.Module):
         # get channels that have any unmasked energies
         channel_active = (mask.sum(dim=1) > 0) # [N, C]
 
+        # ensure at least one channel is active per sample to avoid all-masked attention
+        all_masked = ~channel_active.any(dim=1) # [N]
+        if all_masked.any():
+            channel_active[all_masked, 0] = True
+
         # reshape for per-channel 1D processing
         # stack data and mask as 2 input channels per channel
         data_per_ch = data.permute(0, 2, 1) # [N, C, E]

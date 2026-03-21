@@ -26,7 +26,6 @@ class DETR_Model(nn.Module):
         self.n_head = params['n_head']
         self.n_layers = params['n_layers']
         self.dropout_p = params['dropout_p']
-        self.confidence_threshold = params['confidence_threshold']
 
         self.predict_gamma = params.get('predict_gamma', True)
         self.max_gammas = self.header.max_channels

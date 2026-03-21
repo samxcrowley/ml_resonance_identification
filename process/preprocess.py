@@ -31,10 +31,9 @@ def _process_file(filepath):
     return os.path.basename(filepath), tmp.name, n_samples, t_load, t_proc
 
 # combine and preprocess multiple .gz files into train and test .pt files
-def preprocess(max_resonances, workers=1, train_split=0.8):
+def preprocess(pattern, workers=1, train_split=0.9):
 
-    pattern = f'*nlevel_{max_resonances}*'
-    files = sorted(glob.glob(os.path.join(f'data/raw/', pattern)))
+    files = sorted(glob.glob(os.path.join(f'data/raw/', f'*{pattern}*')))
 
     if not files:
         print(f'No files with pattern {pattern}.')
@@ -101,8 +100,8 @@ def preprocess(max_resonances, workers=1, train_split=0.8):
     out_dir = 'data/preprocessed'
     os.makedirs(out_dir, exist_ok=True)
 
-    train_path = os.path.join(out_dir, f'nlevels_{max_resonances}_train.pt')
-    test_path = os.path.join(out_dir, f'nlevels_{max_resonances}_test.pt')
+    train_path = os.path.join(out_dir, f'{pattern}_train.pt')
+    test_path = os.path.join(out_dir, f'{pattern}_test.pt')
 
     torch.save({
         'tensors': all_tensors[train_idx],
@@ -118,7 +117,6 @@ def preprocess(max_resonances, workers=1, train_split=0.8):
 
 if __name__ == '__main__':
 
-    max_resonances = sys.argv[1]
-    n_workers = int(sys.argv[2])
+    pattern = 'nlevel_10'
 
-    preprocess(max_resonances, workers=n_workers)
+    preprocess(pattern)

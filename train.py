@@ -131,7 +131,7 @@ def train(params):
                               persistent_workers=True,
                               prefetch_factor=4)
 
-    val_loader = DataLoader(uncropped_val_dataset,
+    val_loader = DataLoader(val_dataset,
                             batch_size=batch_size,
                             shuffle=False,
                             num_workers=num_workers,

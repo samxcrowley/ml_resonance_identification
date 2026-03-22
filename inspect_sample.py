@@ -5,12 +5,13 @@ import matplotlib.pyplot as plt
 import process.data as data
 from process.data import ResonanceDataset
 from model.detr import DETR_Model, DETR_Loss, HungarianMatcher
+from model.set_detr import SetDETR_Model
 from process.header import Header
 
-SAMPLE_IDX = 100
+SAMPLE_IDX = 242
 DATASET_PATH = 'data/preprocessed/nlevels_20_test.pt'
-CHECKPOINT_PATH = 'out/runs/STANDARD_0317_1157_detr_gammaimprove_6layers_classheadmlp_cosine_warmup_30queries/checkpoint.pt'
-PARAMS_PATH = 'params/gammaimprove.json'
+CHECKPOINT_PATH = 'out/runs/0320_1622_set_detr_baseline_floorpaddingmask/checkpoint.pt'
+PARAMS_PATH = 'params/set_detr.json'
 CONFIDENCE_THRESHOLD = 0.5
 
 header = Header()
@@ -19,7 +20,7 @@ with open(PARAMS_PATH, 'r') as f:
 
 d = ResonanceDataset(path=DATASET_PATH)
 
-model = DETR_Model(header, params)
+model = SetDETR_Model(header, params)
 checkpoint = torch.load(CHECKPOINT_PATH, weights_only=False)
 model.load_state_dict(checkpoint['model'])
 model.eval()

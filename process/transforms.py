@@ -18,7 +18,14 @@ def get_augment_transform(noise_sigma_log10=0.1, amplitude_scale=0.2):
 
     return transform
 
+FLOOR = -7.9
 def _crop(tensor, target, metadata, crop_energy=0.0, crop_angle=False, crop_channel=False):
+
+    # mask out padding
+    mask = (tensor > FLOOR).float()
+
+    if crop_energy == 0.0 and not crop_angle and not crop_channel:
+        return torch.stack([tensor, mask], dim=0), target
 
     E, C = tensor.shape
 
@@ -27,15 +34,11 @@ def _crop(tensor, target, metadata, crop_energy=0.0, crop_angle=False, crop_chan
     n_pp = n_entrances * n_exits
     n_angles = metadata['n_angles']
 
-    do_crop = np.random.rand() < 0.5
+    max_resonances = target['energy'].shape[0]
+    energies = target['energy'].squeeze(1)
+    n_true = int(target['class'][:, 1].sum().item())
 
-    # mask out padding
-    FLOOR = -7.9
-    mask = (tensor > FLOOR).float()
-
-    if not do_crop or (crop_energy == 0.0 and not crop_angle and not crop_channel):
-        return torch.stack([tensor, mask], dim=0), target
-
+    crop_mask = mask.clone()
     e_start = 0.0
     e_end = 1.0
 
@@ -47,8 +50,8 @@ def _crop(tensor, target, metadata, crop_energy=0.0, crop_angle=False, crop_chan
         e_end = e_start + E_keep_ratio
         e_idx_start = int(e_start * E)
         e_idx_end = int(e_end * E)
-        mask[:e_idx_start, :] = 0.0
-        mask[e_idx_end:, :] = 0.0
+        crop_mask[:e_idx_start, :] = 0.0
+        crop_mask[e_idx_end:, :] = 0.0
 
     # drop entrance channels
     if crop_channel:
@@ -60,46 +63,29 @@ def _crop(tensor, target, metadata, crop_energy=0.0, crop_angle=False, crop_chan
                     pp = ent * n_exits + ext
                     start = pp * n_angles
                     end = start + n_angles
-                    mask[:, start:end] = 0.0
+                    crop_mask[:, start:end] = 0.0
 
-    # drop 0-3 angles across all channels
+    # drop angles across all channels
     if crop_angle:
-        max_drop = min(3, n_angles - 3)
+        max_drop = n_angles - 3
         if max_drop > 0:
             n_drop = np.random.randint(0, max_drop + 1)
             drop_indices = np.random.choice(n_angles, size=n_drop, replace=False)
             for a in drop_indices:
                 for pp in range(n_pp):
-                    mask[:, pp * n_angles + a] = 0.0
+                    crop_mask[:, pp * n_angles + a] = 0.0
 
-    # set cropped values to the floor (-8 in log10)
-    cropped_tensor = torch.stack([torch.where(mask > 0, tensor, torch.tensor(-8.0)), mask], dim=0)
+    cropped_tensor = torch.stack([torch.where(crop_mask > 0, tensor, torch.tensor(-8.0)), crop_mask], dim=0)
 
-    # only keep resonances that weren't cropped
-    max_resonances = target['energy'].shape[0]
-    energies = target['energy'].squeeze(1)
-    masked_tensor = tensor * mask
-
+    # keep resonances within cropped energy range
     res_mask = torch.zeros(max_resonances, dtype=torch.bool)
-
-    for i in range(max_resonances):
-
+    for i in range(n_true):
         e = energies[i].item()
-        
-        if e < e_start or e > e_end:
-            continue
-
-        e_idx = int(e * E)
-
-        # check if any unmasked column has signal above the floor at this energy
-        row_mask = mask[e_idx]
-        row_vals = tensor[e_idx]
-        if (row_vals[row_mask > 0] > -8.0).any():
+        if e >= e_start and e <= e_end:
             res_mask[i] = True
 
     n_kept = res_mask.sum().item()
 
-    # pad filtered targets back to max_resonances
     cropped_target = {}
     target_keys = ['class', 'energy', 'gamma', 'gamma_mask', 'jpi_index']
     for k in target_keys:
@@ -107,9 +93,7 @@ def _crop(tensor, target, metadata, crop_energy=0.0, crop_angle=False, crop_chan
         pad_shape = (max_resonances - n_kept, *filtered.shape[1:])
         cropped_target[k] = torch.cat([filtered, torch.zeros(pad_shape, dtype=filtered.dtype)], dim=0)
 
-    # mark padded slots as no-resonance in class target
     cropped_target['class'][n_kept:, 0] = 1.0
-
     cropped_target['n_res'] = _normalise(torch.tensor(n_kept, dtype=target['n_res'].dtype), 0, data.MAX_RESONANCES)
 
     return cropped_tensor, cropped_target

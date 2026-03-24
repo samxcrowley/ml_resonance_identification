@@ -98,6 +98,8 @@ def process_json(data, n_y=512, clamp=1e-8):
     gamma_mask_targets = []
     n_res_targets = []
     jpi_index_targets = []
+    e_min_targets = []
+    e_max_targets = []
 
     header = Header()
 
@@ -207,6 +209,8 @@ def process_json(data, n_y=512, clamp=1e-8):
         jpi_index_targets.append(jpi_index_target)
         n_res_norm = transforms._normalise(n_resonances, 0, MAX_RESONANCES)
         n_res_targets.append(n_res_norm)
+        e_min_targets.append(e_min)
+        e_max_targets.append(e_max)
 
     targets = {
         'class': torch.stack(class_targets),
@@ -215,10 +219,18 @@ def process_json(data, n_y=512, clamp=1e-8):
         'gamma_mask': torch.stack(gamma_mask_targets),
         'jpi_index': torch.stack(jpi_index_targets),
         'n_res': torch.tensor(n_res_targets, dtype=torch.float32),
+        'e_min': torch.tensor(e_min_targets, dtype=torch.float32),
+        'e_max': torch.tensor(e_max_targets, dtype=torch.float32),
     }
 
     entrances = sorted(set(pp[0] for pp in pp_combos))
     exits = sorted(set(pp[1] for pp in pp_combos))
+
+    # channel to particle pair mapping for each jpi set
+    channel_pp_map = torch.full([header.n_jpi_sets, header.max_channels], -1, dtype=torch.long)
+    for j, jpi_set in enumerate(header.jpi_sets):
+        for i, ch in enumerate(jpi_set['channels']):
+            channel_pp_map[j, i] = ch['pp_index']
 
     metadata = {
         'n_entrances': len(entrances),
@@ -227,6 +239,7 @@ def process_json(data, n_y=512, clamp=1e-8):
         'n_pp_combos': len(pp_combos),
         'pp_combos': pp_combos,
         'angles': angles,
+        'channel_pp_map': channel_pp_map,
     }
 
     return tensors, targets, metadata

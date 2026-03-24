@@ -53,9 +53,9 @@ def _crop(tensor, target, metadata, crop_energy=0.0, crop_angle=False, crop_chan
         crop_mask[:e_idx_start, :] = 0.0
         crop_mask[e_idx_end:, :] = 0.0
 
-    # drop entrance channels
+    # drop entrance channels (keep a minimum of 2)
     if crop_channel:
-        n_keep = np.random.randint(1, n_entrances + 1)
+        n_keep = np.random.randint(2, n_entrances + 1)
         kept_entrances = np.random.choice(n_entrances, size=n_keep, replace=False)
         for ent in range(n_entrances):
             if ent not in kept_entrances:

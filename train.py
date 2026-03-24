@@ -26,12 +26,14 @@ train_stats = [
     'jpi_index_loss'
 ]
 
-def run_epoch(n_epoch, model, loader, loss_fn, is_eval, optimiser, device):
+def run_epoch(n_epoch, model, loader, loss_fn, is_eval, optimiser, device, scaler=None):
 
     if is_eval:
         model.eval()
     else:
         model.train()
+
+    use_amp = scaler is not None
 
     n = 0.0
     stats = {}
@@ -41,15 +43,23 @@ def run_epoch(n_epoch, model, loader, loss_fn, is_eval, optimiser, device):
     for tensor, targets in loader:
 
         tensor = tensor.to(device, non_blocking=True)
-        preds = model(tensor)
 
-        loss = loss_fn(preds, targets)
+        with torch.amp.autocast('cuda', enabled=use_amp):
+            preds = model(tensor)
+            loss = loss_fn(preds, targets)
 
         if not is_eval:
             optimiser.zero_grad()
-            loss['total_loss'].backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-            optimiser.step()
+            if use_amp:
+                scaler.scale(loss['total_loss']).backward()
+                scaler.unscale_(optimiser)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                scaler.step(optimiser)
+                scaler.update()
+            else:
+                loss['total_loss'].backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                optimiser.step()
 
         for stat in loss.keys():
             stats[stat] += loss[stat].item() * tensor.size(0)
@@ -141,6 +151,9 @@ def train(params):
 
     model.to(device)
 
+    use_amp = device.type == 'cuda'
+    scaler = torch.amp.GradScaler('cuda') if use_amp else None
+
     optimiser = model.get_optimiser(lr=lr, weight_decay=weight_decay)
 
     resume_from = params.get('resume_from', None)
@@ -183,7 +196,7 @@ def train(params):
     try:
         for epoch in range(1, n_epochs + 1):
 
-            train_m = run_epoch(epoch, model, train_loader, loss_fn, False, optimiser, device)
+            train_m = run_epoch(epoch, model, train_loader, loss_fn, False, optimiser, device, scaler)
             val_m = run_epoch(epoch, model, val_loader, loss_fn, True, optimiser, device)
 
             if scheduler_type == 'cosine':

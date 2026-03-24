@@ -17,7 +17,7 @@ MODELS = {
     'set_detr': SetDETR_Model,
 }
 
-def evaluate(run_dir, crop_strength=0.0, confidence_threshold=0.5, test_data_path='data/preprocessed/nlevel_20_n_3125_test.pt'):
+def evaluate(run_dir, crop_strength=0.0, confidence_threshold=0.5, test_data_path='data/preprocessed/nlevel_20_test.pt'):
 
     with open(f'{run_dir}/params.json', 'r') as f:
         params = json.load(f)
@@ -42,7 +42,7 @@ def evaluate(run_dir, crop_strength=0.0, confidence_threshold=0.5, test_data_pat
         crop_params = {
             'crop_energy': crop_strength,
             'crop_angle': True,
-            'crop_channel': False,
+            'crop_channel': True,
         }
 
     dataset = data.ResonanceDataset(test_data_path, crop_params, transform)

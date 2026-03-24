@@ -30,7 +30,7 @@ class DETR_Model(nn.Module):
         self.predict_gamma = params.get('predict_gamma', True)
         self.max_gammas = self.header.max_channels
 
-        self.n_queries = 30
+        self.n_queries = params['n_queries']
         self.n_jpi_sets = self.header.n_jpi_sets
 
         self.pos_enc_max_len = 1000

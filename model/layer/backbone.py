@@ -1,4 +1,5 @@
 from torch import nn
+import torch.nn.functional as F
 
 class Backbone(nn.Module):
 
@@ -35,17 +36,21 @@ class Backbone(nn.Module):
 
     def forward(self, x):
 
+        mask = x[:, 1:2, :, :]
+        mask = F.max_pool2d(mask, kernel_size=5, stride=(1, 3), padding=2)
+        mask = F.max_pool2d(mask, kernel_size=5, stride=(1, 3), padding=2)
+        mask = F.max_pool2d(mask, kernel_size=3, stride=(2, 2), padding=1)
+        mask = F.max_pool2d(mask, kernel_size=3, stride=(2, 2), padding=1)
+        mask = mask.flatten(1)
+
+        key_padding_mask = (mask == 0)
+
         x = self.conv1(x)
-
         x = self.conv2(x)
-
         x = self.conv3(x)
-
         x = self.conv4(x)
-        
         x = x.flatten(2)
-
         x = x.permute(0, 2, 1)
 
         # [N, HW, D]
-        return x
+        return x, key_padding_mask

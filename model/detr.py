@@ -105,17 +105,17 @@ class DETR_Model(nn.Module):
 
         N = x.size(0)
 
-        features = self.backbone(x)
+        features, key_padding_mask = self.backbone(x)
 
         pos_enc = self.pos_enc(features)
 
-        enc = self.encoder(features, pos_enc)
+        enc = self.encoder(features, pos_enc, key_padding_mask=key_padding_mask)
 
         query_pos = self.query_embedding.weight.unsqueeze(0).repeat(N, 1, 1)
 
         x = torch.zeros_like(query_pos)
 
-        out, _ = self.decoder(x, enc, pos_enc, query_pos)
+        out, _ = self.decoder(x, enc, pos_enc, query_pos, memory_key_padding_mask=key_padding_mask)
 
         preds = {
             'class': self.class_head(out),
@@ -183,6 +183,9 @@ class DETR_Loss(nn.Module):
                 t['gamma'] = targets['gamma'][n][mask]
                 t['gamma_mask'] = targets['gamma_mask'][n][mask]
 
+            if 'info_weight' in targets:
+                t['info_weight'] = targets['info_weight'][n][mask]
+
             _targets.append(t)
 
         return _targets
@@ -215,21 +218,45 @@ class DETR_Loss(nn.Module):
 
             if len(pred_idx) > 0:
 
-                loss_energy += F.l1_loss(
-                    preds['energy'][n][pred_idx],
-                    targets[n]['energy'][target_idx].float().to(device, non_blocking=True)
-                )
+                # per-resonance information weights
+                has_weights = 'info_weight' in targets[n]
+                if has_weights:
+                    weights = targets[n]['info_weight'][target_idx].float().to(device)
+                    w_sum = weights.sum()
+                else:
+                    w_sum = None
 
-                loss_jpi_index += F.cross_entropy(
-                    preds['jpi_index'][n][pred_idx],
-                    targets[n]['jpi_index'][target_idx].squeeze(1).long().to(device, non_blocking=True)
-                )
+                if has_weights and w_sum > 0:
+                    per_e = F.l1_loss(
+                        preds['energy'][n][pred_idx],
+                        targets[n]['energy'][target_idx].float().to(device),
+                        reduction='none'
+                    )
+                    loss_energy += (per_e.squeeze(-1) * weights).sum() / w_sum
+                elif not has_weights:
+                    loss_energy += F.l1_loss(
+                        preds['energy'][n][pred_idx],
+                        targets[n]['energy'][target_idx].float().to(device)
+                    )
+
+                if has_weights and w_sum > 0:
+                    per_jpi = F.cross_entropy(
+                        preds['jpi_index'][n][pred_idx],
+                        targets[n]['jpi_index'][target_idx].squeeze(1).long().to(device),
+                        reduction='none'
+                    )
+                    loss_jpi_index += (per_jpi * weights).sum() / w_sum
+                elif not has_weights:
+                    loss_jpi_index += F.cross_entropy(
+                        preds['jpi_index'][n][pred_idx],
+                        targets[n]['jpi_index'][target_idx].squeeze(1).long().to(device)
+                    )
 
                 if self.predict_gamma:
 
                     pred_gamma = preds['gamma'][n][pred_idx]
-                    target_gamma = targets[n]['gamma'][target_idx].float().to(device, non_blocking=True)
-                    gamma_mask = targets[n]['gamma_mask'][target_idx].float().to(device, non_blocking=True)
+                    target_gamma = targets[n]['gamma'][target_idx].float().to(device)
+                    gamma_mask = targets[n]['gamma_mask'][target_idx].float().to(device)
 
                     # zero out NaN gammas and clear their mask
                     nan_mask = target_gamma.isnan()
@@ -240,7 +267,13 @@ class DETR_Loss(nn.Module):
                         gamma_mask[nan_mask] = 0.0
 
                     if gamma_mask.sum() > 0:
-                        loss_gamma += (F.mse_loss(pred_gamma, target_gamma, reduction='none') * gamma_mask).sum() / gamma_mask.sum()
+                        if has_weights and w_sum > 0:
+                            per_res_gamma = (F.mse_loss(pred_gamma, target_gamma, reduction='none') * gamma_mask).sum(dim=1)
+                            gamma_count = gamma_mask.sum(dim=1).clamp(min=1)
+                            per_res_gamma = per_res_gamma / gamma_count
+                            loss_gamma += (per_res_gamma * weights).sum() / w_sum
+                        else:
+                            loss_gamma += (F.mse_loss(pred_gamma, target_gamma, reduction='none') * gamma_mask).sum() / gamma_mask.sum()
             
         loss_class /= N
         loss_energy /= N
@@ -286,17 +319,22 @@ class HungarianMatcher(nn.Module):
                 ))
                 continue
 
+            # class cost
+            pred_class_probs = preds['class'][n].softmax(-1)  # [n_queries, 2]
+            cost_class = -pred_class_probs[:, 1].unsqueeze(1).expand(-1, n_objects)
+
             # energy cost
             pred_energy = preds['energy'][n]
             target_energy = target_energy.to(pred_energy.device)
-            cost = torch.cdist(pred_energy, target_energy, p=1)
+            cost_energy = torch.cdist(pred_energy, target_energy, p=1)
 
             # jpi cost
             pred_jpi_index = preds['jpi_index'][n]
             target_jpi_index = target_jpi_index.squeeze(1).long().to(pred_jpi_index.device)
             pred_jpi_probs = pred_jpi_index.softmax(-1) # [n_queries, n_jpi]
             cost_jpi_index = -pred_jpi_probs[:, target_jpi_index] # [n_queries, MAX_RESONANCES]
-            cost += cost_jpi_index
+
+            cost = cost_class + cost_energy + cost_jpi_index
 
             # Hungarian algorithm
             cost = cost.float().cpu().numpy()

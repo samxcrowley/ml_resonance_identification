@@ -9,13 +9,11 @@ import matplotlib
 import matplotlib.pyplot as plt
 import process.data as data
 from model.detr import DETR_Model, DETR_Loss, HungarianMatcher
-from model.set_detr import SetDETR_Model
 from process.header import Header
 import process.transforms as transforms
 
 MODELS = {
-    'detr': DETR_Model,
-    'set_detr': SetDETR_Model,
+    'detr': DETR_Model
 }
 
 def evaluate(

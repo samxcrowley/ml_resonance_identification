@@ -5,13 +5,12 @@ import matplotlib.pyplot as plt
 import process.data as data
 from process.data import ResonanceDataset
 from model.detr import DETR_Model, DETR_Loss, HungarianMatcher
-from model.set_detr import SetDETR_Model
 from process.header import Header
 
 SAMPLE_IDX = 242
-DATASET_PATH = 'data/preprocessed/nlevels_20_test.pt'
-CHECKPOINT_PATH = 'out/runs/0320_1622_set_detr_baseline_floorpaddingmask/checkpoint.pt'
-PARAMS_PATH = 'params/set_detr.json'
+DATASET_PATH = 'data/preprocessed/nlevel_20_test.pt'
+CHECKPOINT_PATH = 'out/runs/STANDARD_0326_1939_detr_attentionnmask_curriculum_cropall'
+PARAMS_PATH = 'params/detr.json'
 CONFIDENCE_THRESHOLD = 0.5
 
 header = Header()
@@ -20,8 +19,8 @@ with open(PARAMS_PATH, 'r') as f:
 
 d = ResonanceDataset(path=DATASET_PATH)
 
-model = SetDETR_Model(header, params)
-checkpoint = torch.load(CHECKPOINT_PATH, weights_only=False)
+model = DETR_Model(header, params)
+checkpoint = torch.load(f'{CHECKPOINT_PATH}/checkpoint.pt', weights_only=False)
 model.load_state_dict(checkpoint['model'])
 model.eval()
 

@@ -10,12 +10,10 @@ import json
 import os
 from datetime import datetime
 from model.detr import DETR_Model, DETR_Loss
-from model.set_detr import SetDETR_Model
 from process.header import Header
 
 MODELS = {
-    'detr': DETR_Model,
-    'set_detr': SetDETR_Model,
+    'detr': DETR_Model
 }
 
 train_stats = [

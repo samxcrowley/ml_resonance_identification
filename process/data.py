@@ -252,19 +252,22 @@ class ResonanceDataset(Dataset):
     def __init__(self, path, crop_params=None, transform=None,
                  tensors=None, targets=None, metadata=None):
 
-        default_metadata = {
-            'n_entrances': 3, 'n_exits': 3,
-            'n_angles': self.tensors[0].shape[1] // 9,
-        }
-
         if tensors is not None and targets is not None:
             self.tensors = tensors
             self.targets = targets
+            default_metadata = {
+                'n_entrances': 3, 'n_exits': 3,
+                'n_angles': self.tensors[0].shape[1] // 9,
+            }
             self.metadata = metadata or default_metadata
         else:
             saved = torch.load(path, weights_only=False)
             self.tensors = saved['tensors']
             self.targets = saved['targets']
+            default_metadata = {
+                'n_entrances': 3, 'n_exits': 3,
+                'n_angles': self.tensors[0].shape[1] // 9,
+            }
             self.metadata = saved.get('metadata', default_metadata)
 
         self.crop_params = crop_params or {}

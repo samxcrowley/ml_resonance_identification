@@ -96,7 +96,17 @@ def train(params):
         'crop_energy': params.get('crop_energy', 0.0),
         'crop_angle': params.get('crop_angle', False),
         'crop_channel': params.get('crop_channel', False),
+        'min_angles': params.get('min_angles', 3),
+        'min_channels': params.get('min_channels', 1),
     }
+
+    curriculum_epochs = params.get('curriculum_epochs', 0)
+    if curriculum_epochs > 0:
+        crop_energy_max = crop_params['crop_energy']
+        min_angles_final = crop_params['min_angles']
+        min_channels_final = crop_params['min_channels']
+        n_angles = params['n_angles']
+        n_entrances = params['n_entrances']
 
     model_cls = MODELS[params['model']]
     model = model_cls(header, params)
@@ -125,28 +135,36 @@ def train(params):
                                      [train_size, val_size], \
                                         generator=torch.Generator().manual_seed(seed))
 
-    uncropped_val_dataset = data.ResonanceDataset(data_path)
+    uncropped_val_dataset = data.ResonanceDataset(
+        data_path,
+        tensors=base_dataset.tensors,
+        targets=base_dataset.targets,
+        metadata=base_dataset.metadata)
     if n_subset != -1:
         uncropped_val_dataset = Subset(uncropped_val_dataset, np.arange(n_subset))
     uncropped_val_dataset = Subset(uncropped_val_dataset, val_dataset.indices)
-    
+
     print(f'Training size: {len(train_dataset)}')
-    print(f'Validation size: {len(val_dataset)}\n')
+    print(f'Validation size: {len(uncropped_val_dataset)}\n')
+
+    # persistent workers cache dataset state, disable when curriculum
+    # updates crop_params between epochs
+    use_persistent_train = (curriculum_epochs == 0) and (num_workers > 0)
 
     train_loader = DataLoader(train_dataset,
                               batch_size=batch_size,
                               shuffle=True,
                               num_workers=num_workers,
                               pin_memory=True,
-                              persistent_workers=True,
+                              persistent_workers=use_persistent_train,
                               prefetch_factor=4)
 
-    val_loader = DataLoader(val_dataset,
+    val_loader = DataLoader(uncropped_val_dataset,
                             batch_size=batch_size,
                             shuffle=False,
                             num_workers=num_workers,
                             pin_memory=True,
-                            persistent_workers=True,
+                            persistent_workers=num_workers > 0,
                             prefetch_factor=4)
 
     model.to(device)
@@ -195,6 +213,12 @@ def train(params):
 
     try:
         for epoch in range(1, n_epochs + 1):
+
+            if curriculum_epochs > 0:
+                progress = min(1.0, epoch / curriculum_epochs)
+                base_dataset.crop_params['crop_energy'] = crop_energy_max * progress
+                base_dataset.crop_params['min_angles'] = round(n_angles - (n_angles - min_angles_final) * progress)
+                base_dataset.crop_params['min_channels'] = round(n_entrances - (n_entrances - min_channels_final) * progress)
 
             train_m = run_epoch(epoch, model, train_loader, loss_fn, False, optimiser, device, scaler)
             val_m = run_epoch(epoch, model, val_loader, loss_fn, True, optimiser, device)

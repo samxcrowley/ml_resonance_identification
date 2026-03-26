@@ -247,19 +247,25 @@ def process_json(data, n_y=512, clamp=1e-8):
 class ResonanceDataset(Dataset):
 
     # accepts preprocessed .pt files only
-    def __init__(self, path, crop_params=None, transform=None):
-
-        saved = torch.load(path, weights_only=False)
-
-        self.tensors = saved['tensors']
-        self.targets = saved['targets']
+    # pass tensors, targets, metadata to share data from another dataset
+    # without reloading from disk
+    def __init__(self, path, crop_params=None, transform=None,
+                 tensors=None, targets=None, metadata=None):
 
         default_metadata = {
             'n_entrances': 3, 'n_exits': 3,
             'n_angles': self.tensors[0].shape[1] // 9,
         }
 
-        self.metadata = saved.get('metadata', default_metadata)
+        if tensors is not None and targets is not None:
+            self.tensors = tensors
+            self.targets = targets
+            self.metadata = metadata or default_metadata
+        else:
+            saved = torch.load(path, weights_only=False)
+            self.tensors = saved['tensors']
+            self.targets = saved['targets']
+            self.metadata = saved.get('metadata', default_metadata)
 
         self.crop_params = crop_params or {}
         self.transform = transform

@@ -2,7 +2,6 @@ import torch
 import torch.nn.functional as F
 import torchvision.transforms
 import process.data as data
-import numpy as np
 
 def get_augment_transform(noise_sigma_log10=0.1, amplitude_scale=0.2):
 
@@ -19,13 +18,8 @@ def get_augment_transform(noise_sigma_log10=0.1, amplitude_scale=0.2):
     return transform
 
 FLOOR = -7.9
-def _crop(tensor, target, metadata, crop_energy=0.0, crop_angle=False, crop_channel=False):
-
-    # mask out padding
-    mask = (tensor > FLOOR).float()
-
-    if crop_energy == 0.0 and not crop_angle and not crop_channel:
-        return torch.stack([tensor, mask], dim=0), target
+def _crop(tensor, target, metadata, crop_energy=0.0, crop_angle=False, crop_channel=False,
+          min_angles=3, min_channels=1):
 
     E, C = tensor.shape
 
@@ -38,25 +32,25 @@ def _crop(tensor, target, metadata, crop_energy=0.0, crop_angle=False, crop_chan
     energies = target['energy'].squeeze(1)
     n_true = int(target['class'][:, 1].sum().item())
 
-    crop_mask = mask.clone()
+    crop_mask = (tensor > FLOOR).float()
     e_start = 0.0
     e_end = 1.0
 
-    # pick a fraction of energies to cut from the top and bottom
+    # crop energies
     if crop_energy > 0.0:
-        E_crop_ratio = np.random.rand() * crop_energy
+        E_crop_ratio = torch.rand(1).item() * crop_energy
         E_keep_ratio = 1.0 - E_crop_ratio
-        e_start = np.random.rand() * (1.0 - E_keep_ratio)
+        e_start = torch.rand(1).item() * (1.0 - E_keep_ratio)
         e_end = e_start + E_keep_ratio
         e_idx_start = int(e_start * E)
         e_idx_end = int(e_end * E)
         crop_mask[:e_idx_start, :] = 0.0
         crop_mask[e_idx_end:, :] = 0.0
 
-    # drop entrance channels (keep a minimum of 2)
+    # drop entrance channels
     if crop_channel:
-        n_keep = np.random.randint(2, n_entrances + 1)
-        kept_entrances = np.random.choice(n_entrances, size=n_keep, replace=False)
+        n_keep = torch.randint(min_channels, n_entrances + 1, (1,)).item()
+        kept_entrances = torch.randperm(n_entrances)[:n_keep]
         for ent in range(n_entrances):
             if ent not in kept_entrances:
                 for ext in range(n_exits):
@@ -67,15 +61,17 @@ def _crop(tensor, target, metadata, crop_energy=0.0, crop_angle=False, crop_chan
 
     # drop angles across all channels
     if crop_angle:
-        max_drop = n_angles - 3
+        max_drop = n_angles - min_angles
         if max_drop > 0:
-            n_drop = np.random.randint(0, max_drop + 1)
-            drop_indices = np.random.choice(n_angles, size=n_drop, replace=False)
-            for a in drop_indices:
-                for pp in range(n_pp):
-                    crop_mask[:, pp * n_angles + a] = 0.0
+            n_drop = torch.randint(0, max_drop + 1, (1,)).item()
+            drop_indices = torch.randperm(n_angles)[:n_drop]
+            cols = [pp * n_angles + a for a in drop_indices for pp in range(n_pp)]
+            if cols:
+                crop_mask[:, cols] = 0.0
 
-    cropped_tensor = torch.stack([torch.where(crop_mask > 0, tensor, torch.tensor(-8.0)), crop_mask], dim=0)
+    # build output tensor [2, E, C]
+    cropped_data = torch.where(crop_mask > 0, tensor, torch.tensor(-8.0))
+    cropped_tensor = torch.stack([cropped_data, crop_mask], dim=0)
 
     # keep resonances within cropped energy range
     res_mask = torch.zeros(max_resonances, dtype=torch.bool)
@@ -95,8 +91,106 @@ def _crop(tensor, target, metadata, crop_energy=0.0, crop_angle=False, crop_chan
 
     cropped_target['class'][n_kept:, 0] = 1.0
     cropped_target['n_res'] = _normalise(torch.tensor(n_kept, dtype=target['n_res'].dtype), 0, data.MAX_RESONANCES)
+    cropped_target['e_min'] = target['e_min']
+    cropped_target['e_max'] = target['e_max']
+
+    # get information weights per resonance
+    crop_mask_torch = cropped_tensor[1]
+    info_weight = _get_info_weights(cropped_target, n_kept, crop_mask_torch, metadata)
+    cropped_target['info_weight'] = info_weight
 
     return cropped_tensor, cropped_target
+
+# information weight per resonance
+# W = sum_c[N_c * G_c] / NG
+# N = total non-masked data points within G of energy level
+# N_c = non-masked data points in c within G of energy level
+# G = total width
+# G_c = partial width in c
+def _get_info_weights(target, n_kept, crop_mask, metadata):
+
+    max_resonances = target['energy'].shape[0]
+    info_weight = torch.zeros(max_resonances, dtype=torch.float32)
+
+    if n_kept == 0:
+        return info_weight
+
+    E, C = crop_mask.shape
+    e_min = target['e_min'].item()
+    e_max = target['e_max'].item()
+    e_range = e_max - e_min
+
+    n_entrances = metadata['n_entrances']
+    n_exits = metadata['n_exits']
+    n_angles = metadata['n_angles']
+    channel_pp_map = metadata['channel_pp_map']
+
+    # precompute per-pp column sums for each energy bin row
+    # pp_col_sums[pp, e] = sum of crop_mask[e, cols_involving_pp]
+    n_particle_pairs = max(n_entrances, n_exits)
+    pp_col_sums = torch.zeros(n_particle_pairs, E, dtype=torch.float32)
+    for ent in range(n_entrances):
+        for ext in range(n_exits):
+            pp_combo_idx = ent * n_exits + ext
+            col_start = pp_combo_idx * n_angles
+            col_end = col_start + n_angles
+            col_sum = crop_mask[:, col_start:col_end].sum(dim=1)
+            pp_col_sums[ent] += col_sum
+            pp_col_sums[ext] += col_sum
+
+    # total non-masked points per energy bin row
+    row_sums = crop_mask.sum(dim=1)
+
+    for i in range(n_kept):
+
+        e_norm = target['energy'][i].item()
+        jpi_idx = int(target['jpi_index'][i].item())
+        gammas_norm = target['gamma'][i]
+        g_mask = target['gamma_mask'][i]
+
+        # un-normalise gammas
+        gamma_log = gammas_norm * (data.GAMMA_LOG_MAX - data.GAMMA_LOG_MIN) + data.GAMMA_LOG_MIN
+        gamma_linear = (10.0 ** gamma_log) * g_mask
+
+        G = gamma_linear.sum().item()
+        if G <= 0:
+            continue
+
+        # energy window: E +- G in bin space
+        G_norm = G / e_range
+        e_bin = e_norm * E
+        G_bins = G_norm * E
+        bin_lo = max(0, int(e_bin - G_bins))
+        bin_hi = min(E, int(e_bin + G_bins) + 1)
+
+        if bin_lo >= bin_hi:
+            continue
+
+        N = row_sums[bin_lo:bin_hi].sum().item()
+
+        if N == 0:
+            continue
+
+        # group partial widths by particle pair
+        pp_indices = channel_pp_map[jpi_idx]
+        pp_gammas = {}
+        for ch_idx in range(len(pp_indices)):
+            pp = pp_indices[ch_idx].item()
+            if pp < 0:
+                break
+            if g_mask[ch_idx].item() == 0:
+                continue
+            pp_gammas[pp] = pp_gammas.get(pp, 0.0) + gamma_linear[ch_idx].item()
+
+        # weight = (sum_c N_c * G_c) / (N * G)
+        numerator = 0.0
+        for pp, Gc in pp_gammas.items():
+            Nc = pp_col_sums[pp, bin_lo:bin_hi].sum().item()
+            numerator += Nc * Gc
+
+        info_weight[i] = numerator / (N * G)
+
+    return info_weight
 
 # Gaussian noise in log10 space, approx. lognormal multiplicative
 # noise in linear

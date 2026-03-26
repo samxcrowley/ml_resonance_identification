@@ -78,8 +78,13 @@ Configuration is set in the JSON params file. See `params/detr.json` for the bas
 ### Evaluation
 
 ```bash
-python test.py out/runs/<run_id> <crop_strength> <confidence_threshold>
+python test.py out/runs/<run_id> [--crop] [--confidence-threshold FLOAT] [--width-tolerance FLOAT]
 ```
+
+- `run_dir` -- path to a training run directory (required)
+- `--crop` -- evaluate with cropping augmentations enabled
+- `--confidence-threshold` -- minimum confidence for a prediction to count (default: 0.5)
+- `--width-tolerance` -- relative tolerance for width matching (default: 0.1)
 
 ### Output
 

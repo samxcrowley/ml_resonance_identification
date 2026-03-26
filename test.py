@@ -163,21 +163,23 @@ def evaluate(
         'total_fn': total_fn,
         'total_tn': total_tn,
     }
-
-    raw = {
-        'energy_errors': torch.cat(energy_errors).numpy() if energy_errors else np.array([]),
-        'gamma_errors': torch.cat(gamma_errors).numpy() if gamma_errors else np.array([]),
-        'true_counts': np.array(true_counts),
-        'pred_counts': np.array(pred_counts),
-    }
     
     # save results
     with open(os.path.join(run_dir, f'test_results_threshold{confidence_threshold}.csv'), 'w') as f:
         json.dump(results, f, indent=4)
 
-    return results, raw
+    return results
 
-def print_results(results):
+if __name__ == '__main__':
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('run_dir', type=str)
+    parser.add_argument('--crop', action='store_true')
+    parser.add_argument('--confidence-threshold', type=float, default=0.5)
+    parser.add_argument('--width-tolerance', type=float, default=0.1)
+    args = parser.parse_args()
+
+    results = evaluate(args.run_dir, args.crop, args.confidence_threshold, args.width_tolerance)
 
     print(f'Confidence threshold: {results["confidence_threshold"]:.2f}')
     print(f'Precision: {results["precision"]:.4f}')
@@ -190,78 +192,3 @@ def print_results(results):
     print(f'False positives: {results["total_fp"]}')
     print(f'False negatives: {results["total_fn"]}')
     print(f'True negatives: {results["total_tn"]}')
-
-def plot_results(results, raw, run_dir):
-
-    fig, axes = plt.subplots(1, 3, figsize=(16, 6))
-
-    # confusion matrix
-    ax = axes[0]
-    ax.axis('off')
-    confusion_data = [
-        [f'TP = {results["total_tp"]}', f'FN = {results["total_fn"]}'],
-        [f'FP = {results["total_fp"]}', f'TN = {results["total_tn"]}'],
-    ]
-    table = ax.table(cellText=confusion_data, loc='center', cellLoc='center')
-    table.auto_set_font_size(False)
-    table.set_fontsize(12)
-    table.scale(1, 2.0)
-    ax.set_title('Confusion Table')
-
-    # n_resonances confusion matrix
-    ax = axes[1]
-    max_count = max(raw['true_counts'].max(), raw['pred_counts'].max()) + 1
-    cm = np.zeros((max_count, max_count), dtype=int)
-    for t, p in zip(raw['true_counts'], raw['pred_counts']):
-        cm[t, p] += 1
-    im = ax.imshow(cm, origin='lower', cmap='Blues')
-    fig.colorbar(im, ax=ax)
-
-    # display numbers (doesn't look great)
-    # for i in range(max_count):
-    #     for j in range(max_count):
-    #         if cm[i, j] > 0:
-    #             ax.text(j, i, str(cm[i, j]), ha='center', va='center',
-    #                     color='white' if cm[i, j] > cm.max() / 2 else 'black')
-
-    ax.set_xlabel('Predicted Count')
-    ax.set_ylabel('True Count')
-    ax.set_title('Resonance Count Confusion Matrix')
-    ax.set_xticks(range(max_count))
-    ax.set_yticks(range(max_count))
-
-    # metrics table
-    ax = axes[2]
-    ax.axis('off')
-    table_data = [
-        ['Precision', f'{results["precision"]:.4f}'],
-        ['Recall', f'{results["recall"]:.4f}'],
-        ['Energy MAE', f'{results["energy_mae"]:.6f}'],
-        ['Gamma MAE', f'{results["gamma_mae"]:.6f}'],
-        ['J^pi Accuracy', f'{results["jpi_accuracy"]:.4f}']
-    ]
-    table = ax.table(cellText=table_data, loc='center', cellLoc='left')
-    table.auto_set_font_size(False)
-    table.set_fontsize(11)
-    table.scale(1, 1.4)
-    ax.set_title('Metrics')
-
-    fig.suptitle(f'Test Results (confidence threshold {results["confidence_threshold"]:.2f})', fontsize=14)
-    plt.tight_layout()
-    path = f'{run_dir}/test_results_threshold{confidence_threshold}.png'
-    plt.savefig(path, dpi=150)
-    plt.close()
-
-if __name__ == '__main__':
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument('run_dir', type=str)
-    parser.add_argument('--crop', action='store_true')
-    parser.add_argument('--confidence-threshold', type=float, default=0.5)
-    parser.add_argument('--width-tolerance', type=float, default=0.1)
-    args = parser.parse_args()
-
-    results, raw = evaluate(args.run_dir, args.crop, args.confidence_threshold, args.width_tolerance)
-
-    print_results(results)
-    plot_results(results, raw, args.run_dir)

@@ -17,9 +17,17 @@ def get_augment_transform(noise_sigma_log10=0.1, amplitude_scale=0.2):
 
     return transform
 
-FLOOR = -7.9
-def _crop(tensor, target, metadata, crop_energy=0.0, crop_angle=False, crop_channel=False,
-          min_angles=3, min_channels=1):
+def _crop(
+    tensor,
+    target,
+    metadata,
+    crop_energy=0.0,
+    crop_angle=False,
+    crop_channel=False,
+    min_angles=3,
+    min_channels=1):
+
+    FLOOR = -7.9
 
     E, C = tensor.shape
 

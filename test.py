@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+import argparse
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
@@ -17,7 +18,12 @@ MODELS = {
     'set_detr': SetDETR_Model,
 }
 
-def evaluate(run_dir, crop_strength=0.0, confidence_threshold=0.5, test_data_path='data/preprocessed/nlevel_20_test.pt'):
+def evaluate(
+    run_dir,
+    do_crop,
+    confidence_threshold,
+    width_tolerance,
+    test_data_path='data/preprocessed/nlevel_20_test.pt'):
 
     with open(f'{run_dir}/params.json', 'r') as f:
         params = json.load(f)
@@ -38,9 +44,9 @@ def evaluate(run_dir, crop_strength=0.0, confidence_threshold=0.5, test_data_pat
     model.to(device)
 
     crop_params = {}
-    if crop_strength > 0.0:
+    if do_crop:
         crop_params = {
-            'crop_energy': crop_strength,
+            'crop_energy': 0.5,
             'crop_angle': True,
             'crop_channel': True,
         }
@@ -95,10 +101,8 @@ def evaluate(run_dir, crop_strength=0.0, confidence_threshold=0.5, test_data_pat
                 target_gamma = targets[n]['gamma'][target_idx].to(device)
                 gamma_mask = targets[n]['gamma_mask'][target_idx].to(device)
 
-                # tolerance is T * max partial width (width is log and normalised)
-                T = 0.05
                 max_partial_gamma = target_gamma.max(dim=-1).values
-                eval_tolerance = T * max_partial_gamma
+                eval_tolerance = width_tolerance * max_partial_gamma
 
                 pred_energy = preds['energy'][n][pred_idx].squeeze(-1)
                 target_energy = targets[n]['energy'][target_idx].squeeze(-1).to(device)
@@ -250,12 +254,14 @@ def plot_results(results, raw, run_dir):
 
 if __name__ == '__main__':
 
-    run_dir = sys.argv[1]
-    crop_strength = float(sys.argv[2])
-    confidence_threshold = float(sys.argv[3])
+    parser = argparse.ArgumentParser()
+    parser.add_argument('run_dir', type=str)
+    parser.add_argument('--crop', action='store_true')
+    parser.add_argument('--confidence-threshold', type=float, default=0.5)
+    parser.add_argument('--width-tolerance', type=float, default=0.1)
+    args = parser.parse_args()
 
-    results, raw = evaluate(run_dir, crop_strength, confidence_threshold)
+    results, raw = evaluate(args.run_dir, args.crop, args.confidence_threshold, args.width_tolerance)
 
     print_results(results)
-
-    plot_results(results, raw, run_dir)
+    plot_results(results, raw, args.run_dir)

@@ -1,4 +1,6 @@
-# Resonance Identification with DETR
+# Nuclear Scattering Resonance Identification with DETR
+
+*Note this project is still in-progress, expected to finish in June 2026.*
 
 A [DETR (DEtection TRansformer)](https://arxiv.org/pdf/2005.12872) model for identifying nuclear resonances from scattering cross-section data. The model takes differential cross-section spectra as input and predicts resonance properties: energy, partial widths (gamma), and quantum numbers (J^pi).
 

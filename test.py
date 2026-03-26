@@ -69,6 +69,8 @@ def evaluate(
 
     true_counts = []
     pred_counts = []
+    all_confidences = []
+    all_is_matched = []
 
     with torch.no_grad():
 
@@ -93,8 +95,12 @@ def evaluate(
                 true_counts.append(n_objects)
                 pred_counts.append(n_confident)
 
+                all_confidences.append(confidences.cpu())
+                matched_flags = torch.zeros(n_queries, dtype=torch.bool)
+
                 if len(pred_idx) == 0:
                     total_fp += n_confident
+                    all_is_matched.append(matched_flags)
                     continue
 
                 pred_gamma = preds['gamma'][n][pred_idx]
@@ -112,14 +118,19 @@ def evaluate(
                 target_jpi = targets[n]['jpi_index'][target_idx].squeeze(-1).long().to(device)
                 jpi_match = (pred_jpi == target_jpi)
 
-                # correct prediction is defined as:
-                # jpi matched exactly
-                # energy within tolerance (see above)
-                # confidence greater than threshold
-                tp_mask = close & jpi_match & (confidences[pred_idx] > confidence_threshold)
+                # detection TP: energy within tolerance + confident
+                # jpi accuracy is measured separately among TPs
+                tp_mask = close & (confidences[pred_idx] > confidence_threshold)
                 tp = tp_mask.sum().item()
                 total_tp += tp
                 total_fp += n_confident - tp
+
+                matched_flags[pred_idx[tp_mask.cpu()]] = True
+                all_is_matched.append(matched_flags)
+
+                # jpi accuracy among detection TPs
+                jpi_correct += jpi_match[tp_mask].sum().item()
+                jpi_total += tp
 
                 matched_energy_err = (pred_energy - target_energy).abs()[tp_mask]
                 if matched_energy_err.numel() > 0:
@@ -137,15 +148,12 @@ def evaluate(
                 if gamma_diff.numel() > 0:
                     gamma_errors.append(gamma_diff.cpu())
 
-                # jpi accuracy will always be 1.0 for now, as both of these are equal
-                jpi_correct += jpi_match[tp_mask].sum().item()
-                jpi_total += tp
-
     total_fn = total_true - total_tp
     total_tn = total_slots - total_tp - total_fp - total_fn
 
     precision = total_tp / (total_tp + total_fp) if (total_tp + total_fp) > 0 else 0.0
     recall = total_tp / total_true if total_true > 0 else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
     energy_mae = torch.cat(energy_errors).mean().item() if energy_errors else float('nan')
     gamma_mae = torch.cat(gamma_errors).mean().item() if gamma_errors else float('nan')
     jpi_accuracy = jpi_correct / jpi_total if jpi_total > 0 else float('nan')
@@ -154,6 +162,7 @@ def evaluate(
         'confidence_threshold': confidence_threshold,
         'precision': precision,
         'recall': recall,
+        'f1': f1,
         'energy_mae': energy_mae,
         'gamma_mae': gamma_mae,
         'jpi_accuracy': jpi_accuracy,
@@ -163,12 +172,21 @@ def evaluate(
         'total_fn': total_fn,
         'total_tn': total_tn,
     }
-    
+
+    raw = {
+        'energy_errors': torch.cat(energy_errors).numpy() if energy_errors else np.array([]),
+        'gamma_errors': torch.cat(gamma_errors).numpy() if gamma_errors else np.array([]),
+        'true_counts': np.array(true_counts),
+        'pred_counts': np.array(pred_counts),
+        'all_confidences': torch.cat(all_confidences).numpy(),
+        'all_is_matched': torch.cat(all_is_matched).numpy(),
+    }
+
     # save results
     with open(os.path.join(run_dir, f'test_results_threshold{confidence_threshold}.csv'), 'w') as f:
         json.dump(results, f, indent=4)
 
-    return results
+    return results, raw
 
 if __name__ == '__main__':
 
@@ -179,11 +197,11 @@ if __name__ == '__main__':
     parser.add_argument('--width-tolerance', type=float, default=0.1)
     args = parser.parse_args()
 
-    results = evaluate(args.run_dir, args.crop, args.confidence_threshold, args.width_tolerance)
+    results, raw = evaluate(args.run_dir, args.crop, args.confidence_threshold, args.width_tolerance)
 
-    print(f'Confidence threshold: {results["confidence_threshold"]:.2f}')
     print(f'Precision: {results["precision"]:.4f}')
     print(f'Recall: {results["recall"]:.4f}')
+    print(f'F1: {results["f1"]:.4f}')
     print(f'\nEnergy MAE: {results["energy_mae"]:.6f}')
     print(f'Gamma MAE: {results["gamma_mae"]:.6f}')
     print(f'J^pi Accuracy: {results["jpi_accuracy"]:.4f}')

@@ -70,7 +70,7 @@ This lets the model learn the base task first, then gradually adapt to missing d
 ### Training
 
 ```bash
-python main.py params/[params_name].json
+python main.py params/<params_name>.json
 ```
 
 Configuration is set in the JSON params file. See `params/detr.json` for the base template.

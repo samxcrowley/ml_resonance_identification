@@ -27,7 +27,6 @@ class DETR_Model(nn.Module):
         self.n_layers = params['n_layers']
         self.dropout_p = params['dropout_p']
 
-        self.predict_gamma = params.get('predict_gamma', True)
         self.max_gammas = self.header.max_channels
 
         self.n_queries = params['n_queries']
@@ -91,15 +90,14 @@ class DETR_Model(nn.Module):
         )
 
         # gamma regression (MLP)
-        if self.predict_gamma:
-            self.gamma_head = nn.Sequential(
-                nn.Linear(self.d_transformer, self.d_transformer),
-                nn.ReLU(),
-                nn.Linear(self.d_transformer, self.d_transformer),
-                nn.ReLU(),
-                nn.Linear(self.d_transformer, self.max_gammas),
-                nn.Sigmoid()
-            )
+        self.gamma_head = nn.Sequential(
+            nn.Linear(self.d_transformer, self.d_transformer),
+            nn.ReLU(),
+            nn.Linear(self.d_transformer, self.d_transformer),
+            nn.ReLU(),
+            nn.Linear(self.d_transformer, self.max_gammas),
+            nn.Sigmoid()
+        )
 
     def forward(self, x):
 
@@ -120,7 +118,7 @@ class DETR_Model(nn.Module):
         preds = {
             'class': self.class_head(out),
             'energy': self.energy_head(out),
-            'gamma': self.gamma_head(out) if self.predict_gamma else None,
+            'gamma': self.gamma_head(out),
             'jpi_index': self.jpi_index_head(out)
         }
 
@@ -142,7 +140,6 @@ class DETR_Loss(nn.Module):
         self.header = header
         self.params = params
 
-        self.predict_gamma = self.params.get('predict_gamma', True)
         self.cost_class = self.params['cost_class']
         self.cost_energy = self.params['cost_energy']
         self.cost_gamma = self.params['cost_gamma']
@@ -179,9 +176,8 @@ class DETR_Loss(nn.Module):
                 'jpi_index': jpi_index_targets[n][mask]
             }
 
-            if self.predict_gamma:
-                t['gamma'] = targets['gamma'][n][mask]
-                t['gamma_mask'] = targets['gamma_mask'][n][mask]
+            t['gamma'] = targets['gamma'][n][mask]
+            t['gamma_mask'] = targets['gamma_mask'][n][mask]
 
             if 'info_weight' in targets:
                 t['info_weight'] = targets['info_weight'][n][mask]
@@ -252,28 +248,26 @@ class DETR_Loss(nn.Module):
                         targets[n]['jpi_index'][target_idx].squeeze(1).long().to(device)
                     )
 
-                if self.predict_gamma:
+                pred_gamma = preds['gamma'][n][pred_idx]
+                target_gamma = targets[n]['gamma'][target_idx].float().to(device)
+                gamma_mask = targets[n]['gamma_mask'][target_idx].float().to(device)
 
-                    pred_gamma = preds['gamma'][n][pred_idx]
-                    target_gamma = targets[n]['gamma'][target_idx].float().to(device)
-                    gamma_mask = targets[n]['gamma_mask'][target_idx].float().to(device)
+                # zero out NaN gammas and clear their mask
+                nan_mask = target_gamma.isnan()
+                if nan_mask.any():
+                    target_gamma = target_gamma.clone()
+                    gamma_mask = gamma_mask.clone()
+                    target_gamma[nan_mask] = 0.0
+                    gamma_mask[nan_mask] = 0.0
 
-                    # zero out NaN gammas and clear their mask
-                    nan_mask = target_gamma.isnan()
-                    if nan_mask.any():
-                        target_gamma = target_gamma.clone()
-                        gamma_mask = gamma_mask.clone()
-                        target_gamma[nan_mask] = 0.0
-                        gamma_mask[nan_mask] = 0.0
-
-                    if gamma_mask.sum() > 0:
-                        if has_weights and w_sum > 0:
-                            per_res_gamma = (F.mse_loss(pred_gamma, target_gamma, reduction='none') * gamma_mask).sum(dim=1)
-                            gamma_count = gamma_mask.sum(dim=1).clamp(min=1)
-                            per_res_gamma = per_res_gamma / gamma_count
-                            loss_gamma += (per_res_gamma * weights).sum() / w_sum
-                        else:
-                            loss_gamma += (F.mse_loss(pred_gamma, target_gamma, reduction='none') * gamma_mask).sum() / gamma_mask.sum()
+                if gamma_mask.sum() > 0:
+                    if has_weights and w_sum > 0:
+                        per_res_gamma = (F.mse_loss(pred_gamma, target_gamma, reduction='none') * gamma_mask).sum(dim=1)
+                        gamma_count = gamma_mask.sum(dim=1).clamp(min=1)
+                        per_res_gamma = per_res_gamma / gamma_count
+                        loss_gamma += (per_res_gamma * weights).sum() / w_sum
+                    else:
+                        loss_gamma += (F.mse_loss(pred_gamma, target_gamma, reduction='none') * gamma_mask).sum() / gamma_mask.sum()
             
         loss_class /= N
         loss_energy /= N
@@ -282,17 +276,13 @@ class DETR_Loss(nn.Module):
 
         total = self.cost_class * loss_class + self.cost_energy * loss_energy + self.cost_gamma * loss_gamma + self.cost_jpi_index * loss_jpi_index
 
-        loss = {
+        return {
             'total_loss': total,
             'class_loss': loss_class,
             'energy_loss': loss_energy,
+            'gamma_loss': loss_gamma,
             'jpi_index_loss': loss_jpi_index
         }
-
-        if self.predict_gamma:
-            loss['gamma_loss'] = loss_gamma
-
-        return loss
 
 class HungarianMatcher(nn.Module):
 

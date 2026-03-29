@@ -21,7 +21,8 @@ train_stats = [
     'class_loss',
     'energy_loss',
     'gamma_loss',
-    'jpi_index_loss'
+    'j_loss',
+    'pi_loss',
 ]
 
 def run_epoch(n_epoch, model, loader, loss_fn, is_eval, optimiser, device, scaler=None):
@@ -257,8 +258,10 @@ def train(params):
                     f'| Val C {val_m["class_loss"]:.4f} '
                     f'| Train E {train_m["energy_loss"]:.4f} '
                     f'| Val E {val_m["energy_loss"]:.4f} '
-                    f'| Train J {train_m["jpi_index_loss"]:.4f} '
-                    f'| Val J {val_m["jpi_index_loss"]:.4f} '
+                    f'| Train J {train_m["j_loss"]:.4f} '
+                    f'| Val J {val_m["j_loss"]:.4f} '
+                    f'| Train P {train_m["pi_loss"]:.4f} '
+                    f'| Val P {val_m["pi_loss"]:.4f} '
                     f'| Train G {train_m["gamma_loss"]:.4f} '
                     f'| Val G {val_m["gamma_loss"]:.4f}'
                 )

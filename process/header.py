@@ -1,4 +1,5 @@
 import json
+import torch
 from dataclasses import dataclass
 
 class Header:
@@ -27,5 +28,12 @@ class Header:
         return max_channels
 
     def get_set_n_channels(self, set_index):
-        
+
         return len(self.jpi_sets[set_index]['channels'])
+
+    def get_jpi_to_j_index(self):
+        return torch.tensor([int(s['j'] * 2) for s in self.jpi_sets], dtype=torch.long)
+
+    # 0: -, 1: +
+    def get_jpi_to_pi_index(self):
+        return torch.tensor([0 if s['parity'] < 0 else 1 for s in self.jpi_sets], dtype=torch.long)

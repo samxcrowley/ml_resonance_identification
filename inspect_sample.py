@@ -34,30 +34,36 @@ n_targets = target_mask.sum().item()
 target_energies = target['energy'][target_mask].squeeze(1)
 target_gammas = target['gamma'][target_mask]
 target_gamma_masks = target['gamma_mask'][target_mask]
-target_jpi = target['jpi_index'][target_mask].squeeze(1).long()
+jpi_to_j  = header.get_jpi_to_j_index()
+jpi_to_pi = header.get_jpi_to_pi_index()
+target_jpi_raw = target['jpi_index'][target_mask].squeeze(1).long()
+target_j  = jpi_to_j[target_jpi_raw]
+target_pi = jpi_to_pi[target_jpi_raw]
 
 confidences = preds['class'][0].softmax(-1)[:, 1]
 confident_mask = confidences > CONFIDENCE_THRESHOLD
 n_preds = confident_mask.sum().item()
 pred_energies = preds['energy'][0, confident_mask].squeeze(1)
 pred_gammas = preds['gamma'][0, confident_mask]
-pred_jpi_probs = preds['jpi_index'][0, confident_mask]
-pred_jpi = pred_jpi_probs.argmax(-1)
+pred_j  = preds['j'][0, confident_mask].argmax(-1)
+pred_pi = preds['pi'][0, confident_mask].argmax(-1)
 pred_confidences = confidences[confident_mask]
 
 prepared_targets = [{
-    'class': torch.ones(n_targets, dtype=torch.long),
-    'energy': target['energy'][target_mask],
-    'gamma': target_gammas,
+    'class':     torch.ones(n_targets, dtype=torch.long),
+    'energy':    target['energy'][target_mask],
+    'gamma':     target_gammas,
     'gamma_mask': target_gamma_masks,
-    'jpi_index': target['jpi_index'][target_mask],
+    'j_index':   target_j,
+    'pi':        target_pi,
 }]
 
 prepared_preds = {
-    'class': preds['class'][0, confident_mask].unsqueeze(0),
+    'class':  preds['class'][0, confident_mask].unsqueeze(0),
     'energy': preds['energy'][0, confident_mask].unsqueeze(0),
-    'gamma': preds['gamma'][0, confident_mask].unsqueeze(0),
-    'jpi_index': preds['jpi_index'][0, confident_mask].unsqueeze(0),
+    'gamma':  preds['gamma'][0, confident_mask].unsqueeze(0),
+    'j':      preds['j'][0, confident_mask].unsqueeze(0),
+    'pi':     preds['pi'][0, confident_mask].unsqueeze(0),
 }
 
 loss_fn = DETR_Loss(header, params)

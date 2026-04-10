@@ -9,8 +9,8 @@ from process.header import Header
 
 SAMPLE_IDX = 242
 DATASET_PATH = 'data/preprocessed/nlevel_20_test.pt'
-CHECKPOINT_PATH = 'out/runs/STANDARD_0326_1939_detr_attentionnmask_curriculum_cropall'
-PARAMS_PATH = 'params/detr.json'
+CHECKPOINT_PATH = 'out/runs/0410_0827_detr_noinfoweight_noblur'
+PARAMS_PATH = 'out/runs/0410_0827_detr_noinfoweight_noblur/params.json'
 CONFIDENCE_THRESHOLD = 0.5
 
 header = Header()
@@ -34,10 +34,10 @@ n_targets = target_mask.sum().item()
 target_energies = target['energy'][target_mask].squeeze(1)
 target_gammas = target['gamma'][target_mask]
 target_gamma_masks = target['gamma_mask'][target_mask]
-jpi_to_j  = header.get_jpi_to_j_index()
+jpi_to_j = header.get_jpi_to_j_index()
 jpi_to_pi = header.get_jpi_to_pi_index()
 target_jpi_raw = target['jpi_index'][target_mask].squeeze(1).long()
-target_j  = jpi_to_j[target_jpi_raw]
+target_j = jpi_to_j[target_jpi_raw]
 target_pi = jpi_to_pi[target_jpi_raw]
 
 confidences = preds['class'][0].softmax(-1)[:, 1]
@@ -50,20 +50,20 @@ pred_pi = preds['pi'][0, confident_mask].argmax(-1)
 pred_confidences = confidences[confident_mask]
 
 prepared_targets = [{
-    'class':     torch.ones(n_targets, dtype=torch.long),
-    'energy':    target['energy'][target_mask],
-    'gamma':     target_gammas,
+    'class': torch.ones(n_targets, dtype=torch.long),
+    'energy': target['energy'][target_mask],
+    'gamma': target_gammas,
     'gamma_mask': target_gamma_masks,
-    'j_index':   target_j,
-    'pi':        target_pi,
+    'j_index': target_j,
+    'pi': target_pi,
 }]
 
 prepared_preds = {
-    'class':  preds['class'][0, confident_mask].unsqueeze(0),
+    'class': preds['class'][0, confident_mask].unsqueeze(0),
     'energy': preds['energy'][0, confident_mask].unsqueeze(0),
-    'gamma':  preds['gamma'][0, confident_mask].unsqueeze(0),
-    'j':      preds['j'][0, confident_mask].unsqueeze(0),
-    'pi':     preds['pi'][0, confident_mask].unsqueeze(0),
+    'gamma': preds['gamma'][0, confident_mask].unsqueeze(0),
+    'j': preds['j'][0, confident_mask].unsqueeze(0),
+    'pi': preds['pi'][0, confident_mask].unsqueeze(0),
 }
 
 loss_fn = DETR_Loss(header, params)
@@ -75,7 +75,10 @@ pred_idx, target_idx = indices[0]
 matched_pred_set = set(pred_idx.tolist())
 matched_target_set = set(target_idx.tolist())
 
-jpi_labels = [f"{int(s['j'])}{'+' if s['parity'] == 1 else '-'}" for s in header.jpi_sets]
+def _jpi_str(j_idx, pi_idx):
+    j_val = j_idx / 2.0
+    j_str = str(int(j_val)) if j_val == int(j_val) else f'{j_val:.1f}'
+    return f'{j_str}{("+" if pi_idx == 1 else "-")}'
 
 print(f'\nTargets: {n_targets} resonances')
 print(f'Predictions: {n_preds} confident (>{CONFIDENCE_THRESHOLD})')
@@ -92,15 +95,15 @@ for idx in range(len(order)):
     te = target_energies[ti].item()
     pe = pred_energies[pi].item()
 
-    tj = target_jpi[ti].item()
-    pj = pred_jpi[pi].item()
+    tj_str = _jpi_str(target_j[ti].item(), target_pi[ti].item())
+    pj_str = _jpi_str(pred_j[pi].item(),  pred_pi[pi].item())
 
     gamma_mask = target_gamma_masks[ti]
     valid_ch = gamma_mask.nonzero(as_tuple=True)[0]
     tg_str = '  '.join(f'ch{c.item()}: {target_gammas[ti, c].item():.3f}' for c in valid_ch)
     pg_str = '  '.join(f'ch{c.item()}: {pred_gammas[pi, c].item():.3f}' for c in valid_ch)
 
-    print(f'\n#{idx+1} | energy: {te:.4f} > {pe:.4f}  jpi: {jpi_labels[tj]} > {jpi_labels[pj]}')
+    print(f'\n#{idx+1} | energy: {te:.4f} > {pe:.4f}  jpi: {tj_str} > {pj_str}')
     print(f'target gamma: {tg_str}')
     print(f'  pred gamma: {pg_str}')
 

@@ -185,88 +185,103 @@ def _compute_metrics(matched, unmatched_confs, confidence_threshold,
         'energy_mae_mev_subbin': _stats(err_sub)[0],
     }
 
-def _plot_sweep(run_dir, sweep, floors, matched_records):
+def _sweep_line_plot(ax, sweep_u, sweep_c, floors, xs, floor_labels, groups, title, ylabel):
+
+    for label, key, color in groups:
+        vals_u = [sweep_u[f][key] for f in floors]
+        vals_c = [sweep_c[f][key] for f in floors]
+        ax.plot(xs, vals_u, color=color, linestyle='-',  marker='o', label=f'{label} (uncropped)')
+        ax.plot(xs, vals_c, color=color, linestyle='--', marker='s', label=f'{label} (cropped)')
+
+    ax.set_xticks(xs)
+    ax.set_xticklabels(floor_labels, fontsize=9)
+    ax.set_xlabel('Tolerance Floor')
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    ax.set_ylim(0, 1.05)
+    ax.legend(fontsize=8)
+    ax.grid(axis='y', alpha=0.3)
+
+def _plot_sweep(run_dir, sweep_u, sweep_c, floors, matched_u, matched_c):
 
     out_dir = os.path.join(run_dir, 'analysis')
     os.makedirs(out_dir, exist_ok=True)
 
-    # metrics plot
-    x = np.arange(len(floors))
-    w = 0.25
     floor_labels = [f'{f}/512\n({_floor_to_kev(f):.0f} keV)' for f in floors]
+    xs = list(range(len(floors)))
 
-    precisions  = [sweep[f]['precision'] for f in floors]
-    recalls = [sweep[f]['recall'] for f in floors]
-    f1s = [sweep[f]['f1'] for f in floors]
-    recalls_res = [sweep[f]['recall_resolvable'] for f in floors]
-    recalls_sub = [sweep[f]['recall_subbin'] for f in floors]
-
-    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
-
-    for ax, bar_groups, title, ylabel in [
-        (axes[0],
-         [('Precision', precisions, 'steelblue'),
-          ('Recall', recalls, 'seagreen'),
-          ('F1', f1s, 'firebrick')],
-         'Overall Metrics vs Tolerance Floor', 'Score'),
-        (axes[1],
-         [('Resolvable (≥1 bin)', recalls_res, 'steelblue'),
-          ('Sub-bin (<1 bin)', recalls_sub, 'coral')],
-         'Recall by Width Tier vs Tolerance Floor', 'Recall'),
-    ]:
-
-        n_groups = len(bar_groups)
-        offsets = np.linspace(-w * (n_groups - 1) / 2, w * (n_groups - 1) / 2, n_groups)
-
-        for (label, vals, color), offset in zip(bar_groups, offsets):
-            bars = ax.bar(x + offset, vals, w, label=label, color=color, alpha=0.85)
-            for bar in bars:
-                h = bar.get_height()
-                ax.text(bar.get_x() + bar.get_width() / 2, h + 0.005,
-                        f'{h:.3f}', ha='center', va='bottom', fontsize=7)
-
-        ax.set_xticks(x)
-        ax.set_xticklabels(floor_labels, fontsize=9)
-        ax.set_xlabel('Tolerance Floor')
-        ax.set_ylabel(ylabel)
-        ax.set_title(title)
-        ax.set_ylim(0, 1.05)
-        ax.legend()
-        ax.grid(axis='y', alpha=0.3)
-
+    # recall
+    fig, ax = plt.subplots(figsize=(8, 5))
+    _sweep_line_plot(ax, sweep_u, sweep_c, floors, xs, floor_labels, [
+        ('Overall', 'recall', 'steelblue'),
+        ('Resolvable (≥1 bin)', 'recall_resolvable', 'seagreen'),
+        ('Sub-bin (<1 bin)', 'recall_subbin', 'coral'),
+    ], 'Recall vs Tolerance Floor', 'Recall')
     fig.tight_layout()
-    fig.savefig(os.path.join(out_dir, 'metrics_sweep.png'), dpi=150)
+    fig.savefig(os.path.join(out_dir, 'recall.png'), dpi=150)
     plt.close(fig)
 
-    # energy error plot
-    err_res_kev = np.array([r['err_mev'] * 1000 for r in matched_records if r['gt_width_bins'] >= 1.0])
-    err_sub_kev = np.array([r['err_mev'] * 1000 for r in matched_records if r['gt_width_bins'] < 1.0])
+    # precision
+    fig, ax = plt.subplots(figsize=(8, 5))
+    _sweep_line_plot(ax, sweep_u, sweep_c, floors, xs, floor_labels, [
+        ('Precision', 'precision', 'steelblue'),
+    ], 'Precision vs Tolerance Floor', 'Precision')
+    fig.tight_layout()
+    fig.savefig(os.path.join(out_dir, 'precision.png'), dpi=150)
+    plt.close(fig)
 
-    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+    # F1
+    fig, ax = plt.subplots(figsize=(8, 5))
+    _sweep_line_plot(ax, sweep_u, sweep_c, floors, xs, floor_labels, [
+        ('F1', 'f1', 'firebrick'),
+    ], 'F1 vs Tolerance Floor', 'F1')
+    fig.tight_layout()
+    fig.savefig(os.path.join(out_dir, 'f1.png'), dpi=150)
+    plt.close(fig)
 
-    for ax, errs, label, color in [
-        (axes[0], err_res_kev, f'Resolvable (≥1 bin)  n={len(err_res_kev)}', 'steelblue'),
-        (axes[1], err_sub_kev, f'Sub-bin (<1 bin)  n={len(err_sub_kev)}',    'coral'),
-    ]:
-        if len(errs) == 0:
-            ax.text(0.5, 0.5, 'No data', ha='center', va='center', transform=ax.transAxes)
-            continue
-        lo = max(errs.min(), 0.1)
-        hi = errs.max()
-        bins = np.logspace(np.log10(lo), np.log10(hi), 60) if hi > lo else 30
-        ax.hist(errs, bins=bins, color=color, alpha=0.75)
-        ax.axvline(errs.mean(), color='red', linestyle='--', label=f'Mean = {errs.mean():.1f} keV')
-        ax.axvline(np.median(errs), color='orange', linestyle='--', label=f'Median = {np.median(errs):.1f} keV')
-        ax.set_xscale('log')
-        ax.set_xlabel('Energy Error (keV)')
-        ax.set_ylabel('Count (matched pairs)')
-        ax.set_title(f'Energy Error Distribution\n{label}')
-        ax.legend(fontsize=8)
-        ax.grid(True, alpha=0.3)
+    # energy error
+    fig, axes = plt.subplots(2, 2, figsize=(13, 10))
 
-    ymax = max(axes[0].get_ylim()[1], axes[1].get_ylim()[1])
-    for ax in axes:
-        ax.set_ylim(0, ymax)
+    row_data = [
+        ('Uncropped', matched_u),
+        ('Cropped',   matched_c),
+    ]
+    col_data = [
+        ('Resolvable (≥1 bin)', lambda r: r['gt_width_bins'] >= 1.0, 'steelblue'),
+        ('Sub-bin (<1 bin)',    lambda r: r['gt_width_bins'] <  1.0, 'coral'),
+    ]
+
+    col_ymaxes = [0.0, 0.0]
+
+    for row_i, (row_label, matched) in enumerate(row_data):
+        for col_i, (col_label, pred, color) in enumerate(col_data):
+
+            ax = axes[row_i][col_i]
+            errs = np.array([r['err_mev'] * 1000 for r in matched if pred(r)])
+
+            if len(errs) == 0:
+                ax.text(0.5, 0.5, 'No data', ha='center', va='center', transform=ax.transAxes)
+                ax.set_title(f'{row_label} — {col_label}')
+                continue
+
+            lo = max(errs.min(), 0.1)
+            hi = errs.max()
+            bins = np.logspace(np.log10(lo), np.log10(hi), 60) if hi > lo else 30
+            ax.hist(errs, bins=bins, color=color, alpha=0.75)
+            ax.axvline(errs.mean(),    color='red',    linestyle='--', label=f'Mean = {errs.mean():.1f} keV')
+            ax.axvline(np.median(errs), color='orange', linestyle='--', label=f'Median = {np.median(errs):.1f} keV')
+            ax.set_xscale('log')
+            ax.set_xlabel('Energy Error (keV)')
+            ax.set_ylabel('Count (matched pairs)')
+            ax.set_title(f'{row_label} — {col_label}  n={len(errs)}')
+            ax.legend(fontsize=8)
+            ax.grid(True, alpha=0.3)
+            col_ymaxes[col_i] = max(col_ymaxes[col_i], ax.get_ylim()[1])
+
+    # same y-axis scale
+    for col_i in range(2):
+        for row_i in range(2):
+            axes[row_i][col_i].set_ylim(0, col_ymaxes[col_i])
 
     fig.tight_layout()
     fig.savefig(os.path.join(out_dir, 'energy_errors.png'), dpi=150)
@@ -276,39 +291,21 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('run_dir', type=str)
-    parser.add_argument('--crop', action='store_true')
     parser.add_argument('--confidence-threshold', type=float, default=0.5)
     parser.add_argument('--width-tolerance', type=float, default=0.5)
+    parser.add_argument('--floor', type=int, default=3)
     args = parser.parse_args()
 
-    matched, unmatched = _collect_records(args.run_dir, args.crop, args.width_tolerance)
+    matched_u, unmatched_u = _collect_records(args.run_dir, False, args.width_tolerance)
+    matched_c, unmatched_c = _collect_records(args.run_dir, True,  args.width_tolerance)
 
     floors = [1, 2, 3, 4, 5]
 
-    sweep = {}
+    sweep_u, sweep_c = {}, {}
     for f in floors:
-        sweep[f] = _compute_metrics(matched, unmatched, args.confidence_threshold, args.width_tolerance, f)
+        sweep_u[f] = _compute_metrics(matched_u, unmatched_u, args.confidence_threshold, args.width_tolerance, f)
+        sweep_c[f] = _compute_metrics(matched_c, unmatched_c, args.confidence_threshold, args.width_tolerance, f)
 
     matplotlib.use('agg')
 
-    _plot_sweep(args.run_dir, sweep, floors, matched)
-
-    floor = 5
-
-    m = sweep[floor]
-    print(f'Results for floor = {floor}/512 = {_floor_to_kev(floor):.0f} keV:')
-    print(f'  Precision:  {m["precision"]:.4f}')
-    print(f'  Recall:     {m["recall"]:.4f}  (overall)')
-    print(f'              {m["recall_resolvable"]:.4f}  '
-          f'(resolvable ≥1 bin, n={m["n_true_resolvable"]})')
-    print(f'              {m["recall_subbin"]:.4f}  '
-          f'(sub-bin <1 bin, n={m["n_true_subbin"]})')
-    print(f'  F1:         {m["f1"]:.4f}')
-    print(f'  J acc:      {m["j_accuracy"]:.4f}')
-    print(f'  pi acc:     {m["pi_accuracy"]:.4f}')
-    print(f'  J^pi acc:   {m["jpi_accuracy"]:.4f}')
-    print(f'  Energy MAE: {m["energy_mae_mev"]*1000:.1f} keV  (overall TPs)')
-    print(f'              {m["energy_mae_mev_resolvable"]*1000:.1f} keV  (resolvable)')
-    print(f'              {m["energy_mae_mev_subbin"]*1000:.1f} keV  (sub-bin)')
-    print(f'  Counts:\n{m["n_true"]} true  '
-          f'{m["tp"]} TP  {m["fp"]} FP  {m["fn"]} FN')
+    _plot_sweep(args.run_dir, sweep_u, sweep_c, floors, matched_u, matched_c)

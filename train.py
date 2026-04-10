@@ -97,6 +97,7 @@ def train(params):
         'crop_channel': params.get('crop_channel', False),
         'min_angles': params.get('min_angles', 3),
         'min_channels': params.get('min_channels', 1),
+        'use_info_weight': params.get('use_info_weight', True),
     }
 
     curriculum_epochs = params.get('curriculum_epochs', 0)
@@ -114,7 +115,8 @@ def train(params):
 
     transform = transforms.get_augment_transform(
         noise_sigma_log10=params.get('noise_sigma_log10', 0.1),
-        amplitude_scale=params.get('amplitude_scale', 0.2)
+        amplitude_scale=params.get('amplitude_scale', 0.2),
+        gaussian_blur_sigma=params.get('gaussian_blur_sigma', 0.0)
     )
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

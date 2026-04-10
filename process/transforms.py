@@ -3,9 +3,12 @@ import torch.nn.functional as F
 import torchvision.transforms
 import process.data as data
 
-def get_augment_transform(noise_sigma_log10=0.1, amplitude_scale=0.2):
+def get_augment_transform(noise_sigma_log10=0.1, amplitude_scale=0.2, gaussian_blur_sigma=0.0):
 
     ls = []
+
+    if gaussian_blur_sigma > 0.0:
+        ls.append(_lambda(lambda x: _gaussian_blur_1d(x, gaussian_blur_sigma)))
 
     if noise_sigma_log10 > 0.0:
         ls.append(_lambda(lambda x: _add_noise(x, noise_sigma_log10)))
@@ -25,7 +28,8 @@ def _crop(
     crop_angle=False,
     crop_channel=False,
     min_angles=3,
-    min_channels=1):
+    min_channels=1,
+    use_info_weight=True):
 
     FLOOR = -7.9
 
@@ -104,8 +108,9 @@ def _crop(
 
     # get information weights per resonance
     crop_mask_torch = cropped_tensor[1]
-    info_weight = _get_info_weights(cropped_target, n_kept, crop_mask_torch, metadata)
-    cropped_target['info_weight'] = info_weight
+    if use_info_weight:
+        info_weight = _get_info_weights(cropped_target, n_kept, crop_mask_torch, metadata)
+        cropped_target['info_weight'] = info_weight
 
     return cropped_tensor, cropped_target
 
@@ -199,6 +204,29 @@ def _get_info_weights(target, n_kept, crop_mask, metadata):
         info_weight[i] = numerator / (N * G)
 
     return info_weight
+
+# Gaussian blur along the energy axis per channel (log space)
+# sigma_bins: std dev in energy bins, reasonable range is 0.5-3.0
+def _gaussian_blur_1d(tensor, sigma_bins):
+    
+    blurred = tensor.clone()
+    data = tensor[0] # [E, C]
+
+    sigma_bins = torch.rand(1).item() * sigma_bins
+    if sigma_bins < 0.1:
+        return blurred
+
+    radius = max(1, int(3 * sigma_bins))
+    x = torch.arange(-radius, radius + 1, dtype=torch.float32, device=data.device)
+    kernel = torch.exp(-0.5 * (x / sigma_bins) ** 2)
+    kernel = kernel / kernel.sum()
+
+    E, C = data.shape
+    data_t = data.T.unsqueeze(1) # [C, 1, E]
+    kernel_t = kernel.view(1, 1, -1)
+    blurred[0] = F.conv1d(data_t, kernel_t, padding=radius).squeeze(1).T # [E, C]
+
+    return blurred
 
 # Gaussian noise in log10 space, approx. lognormal multiplicative
 # noise in linear

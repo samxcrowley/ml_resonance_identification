@@ -190,7 +190,7 @@ def _sweep_line_plot(ax, sweep_u, sweep_c, floors, xs, floor_labels, groups, tit
     for label, key, color in groups:
         vals_u = [sweep_u[f][key] for f in floors]
         vals_c = [sweep_c[f][key] for f in floors]
-        ax.plot(xs, vals_u, color=color, linestyle='-',  marker='o', label=f'{label} (uncropped)')
+        ax.plot(xs, vals_u, color=color, linestyle='-', marker='o', label=f'{label} (uncropped)')
         ax.plot(xs, vals_c, color=color, linestyle='--', marker='s', label=f'{label} (cropped)')
 
     ax.set_xticks(xs)
@@ -239,22 +239,46 @@ def _plot_sweep(run_dir, sweep_u, sweep_c, floors, matched_u, matched_c):
     fig.savefig(os.path.join(out_dir, 'f1.png'), dpi=150)
     plt.close(fig)
 
-    # energy error
-    fig, axes = plt.subplots(2, 2, figsize=(13, 10))
+    _plot_energy_errors(out_dir, matched_u, matched_c,
+                        'localisation_errors.png',
+                        'Localisation Error (all matched pairs)')
+
+def _filter_tp(matched, confidence_threshold, width_tolerance, tol_floor_bins):
+    tp = []
+    for r in matched:
+        floor = tol_floor_bins / N_BINS
+        tol = max(width_tolerance * r['gt_width_mev'] / r['e_range'], floor) if r['e_range'] > 0 else floor
+        if r['pred_conf'] > confidence_threshold and r['err_norm'] < tol:
+            tp.append(r)
+    return tp
+
+def _plot_energy_errors(out_dir, matched_u, matched_c, filename, suptitle):
 
     row_data = [
         ('Uncropped', matched_u),
-        ('Cropped',   matched_c),
+        ('Cropped', matched_c),
     ]
-    col_data = [
-        ('Resolvable (≥1 bin)', lambda r: r['gt_width_bins'] >= 1.0, 'steelblue'),
-        ('Sub-bin (<1 bin)',    lambda r: r['gt_width_bins'] <  1.0, 'coral'),
+
+    col_colours = [
+        ('Resolvable (≥1 bin)', lambda r: r['gt_width_bins'] >= 1.0, 'cornflowerblue'),
+        ('Sub-bin (<1 bin)', lambda r: r['gt_width_bins'] <  1.0, 'lightcoral'),
     ]
+
+    fig, axes = plt.subplots(2, 2, figsize=(13, 10))
+    fig.suptitle(suptitle, fontsize=13)
 
     col_ymaxes = [0.0, 0.0]
 
     for row_i, (row_label, matched) in enumerate(row_data):
-        for col_i, (col_label, pred, color) in enumerate(col_data):
+        for col_i, (col_label, pred, base_colour) in enumerate(col_colours):
+
+            if row_i == 0: # light colour for uncropped
+                colour = base_colour
+
+            else: # dark colour for cropped
+                rgb = np.array(matplotlib.colors.to_rgb(base_colour)) * 255
+                darken_amount = 50
+                colour = matplotlib.colors.to_hex((np.clip(rgb - darken_amount, 0, 255) / 255))
 
             ax = axes[row_i][col_i]
             errs = np.array([r['err_mev'] * 1000 for r in matched if pred(r)])
@@ -267,24 +291,23 @@ def _plot_sweep(run_dir, sweep_u, sweep_c, floors, matched_u, matched_c):
             lo = max(errs.min(), 0.1)
             hi = errs.max()
             bins = np.logspace(np.log10(lo), np.log10(hi), 60) if hi > lo else 30
-            ax.hist(errs, bins=bins, color=color, alpha=0.75)
-            ax.axvline(errs.mean(),    color='red',    linestyle='--', label=f'Mean = {errs.mean():.1f} keV')
-            ax.axvline(np.median(errs), color='orange', linestyle='--', label=f'Median = {np.median(errs):.1f} keV')
+            ax.hist(errs, bins=bins, color=colour, alpha=0.75)
+            ax.axvline(errs.mean(), color='red', linestyle='--', label=f'Mean = {errs.mean():.1f} keV')
+            ax.axvline(np.median(errs), color='gold', linestyle='--', label=f'Median = {np.median(errs):.1f} keV')
             ax.set_xscale('log')
             ax.set_xlabel('Energy Error (keV)')
-            ax.set_ylabel('Count (matched pairs)')
+            ax.set_ylabel('Count')
             ax.set_title(f'{row_label} — {col_label}  n={len(errs)}')
             ax.legend(fontsize=8)
             ax.grid(True, alpha=0.3)
             col_ymaxes[col_i] = max(col_ymaxes[col_i], ax.get_ylim()[1])
 
-    # same y-axis scale
     for col_i in range(2):
         for row_i in range(2):
             axes[row_i][col_i].set_ylim(0, col_ymaxes[col_i])
 
-    fig.tight_layout()
-    fig.savefig(os.path.join(out_dir, 'energy_errors.png'), dpi=150)
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
+    fig.savefig(os.path.join(out_dir, filename), dpi=150)
     plt.close(fig)
 
 if __name__ == '__main__':
@@ -306,6 +329,15 @@ if __name__ == '__main__':
         sweep_u[f] = _compute_metrics(matched_u, unmatched_u, args.confidence_threshold, args.width_tolerance, f)
         sweep_c[f] = _compute_metrics(matched_c, unmatched_c, args.confidence_threshold, args.width_tolerance, f)
 
+    tp_u = _filter_tp(matched_u, args.confidence_threshold, args.width_tolerance, args.floor)
+    tp_c = _filter_tp(matched_c, args.confidence_threshold, args.width_tolerance, args.floor)
+
     matplotlib.use('agg')
 
+    out_dir = os.path.join(args.run_dir, 'analysis')
+    os.makedirs(out_dir, exist_ok=True)
+
     _plot_sweep(args.run_dir, sweep_u, sweep_c, floors, matched_u, matched_c)
+    _plot_energy_errors(out_dir, tp_u, tp_c,
+                        'detection_errors.png',
+                        f'Detection Energy Error (TPs only, floor={args.floor}/512, {_floor_to_kev(args.floor):.0f} keV)')

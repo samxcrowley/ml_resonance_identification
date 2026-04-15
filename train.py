@@ -95,9 +95,11 @@ def train(params):
         'crop_energy': params.get('crop_energy', 0.0),
         'crop_angle': params.get('crop_angle', False),
         'crop_channel': params.get('crop_channel', False),
+        'per_channel_energy_crop': params.get('per_channel_energy_crop', False),
         'min_angles': params.get('min_angles', 3),
         'min_channels': params.get('min_channels', 1),
-        'use_info_weight': params.get('use_info_weight', True),
+        'min_channel_coverage': params.get('min_channel_coverage', 0.1),
+        'use_info_weight': params.get('use_info_weight', False),
     }
 
     curriculum_epochs = params.get('curriculum_epochs', 0)
@@ -105,6 +107,7 @@ def train(params):
         crop_energy_max = crop_params['crop_energy']
         min_angles_final = crop_params['min_angles']
         min_channels_final = crop_params['min_channels']
+        min_channel_coverage_final = crop_params['min_channel_coverage']
         n_angles = params['n_angles']
         n_entrances = params['n_entrances']
 
@@ -230,6 +233,7 @@ def train(params):
                 base_dataset.crop_params['crop_energy'] = crop_energy_max * progress
                 base_dataset.crop_params['min_angles'] = round(n_angles - (n_angles - min_angles_final) * progress)
                 base_dataset.crop_params['min_channels'] = round(n_entrances - (n_entrances - min_channels_final) * progress)
+                base_dataset.crop_params['min_channel_coverage'] = 1.0 - (1.0 - min_channel_coverage_final) * progress
 
             train_m = run_epoch(epoch, model, train_loader, loss_fn, False, optimiser, device, scaler)
             val_m = run_epoch(epoch, model, val_loader, loss_fn, True, optimiser, device)

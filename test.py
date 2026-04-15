@@ -192,6 +192,12 @@ def _sweep_line_plot(ax, sweep_u, sweep_c, floors, xs, floor_labels, groups, tit
         vals_c = [sweep_c[f][key] for f in floors]
         ax.plot(xs, vals_u, color=color, linestyle='-', marker='o', label=f'{label} (uncropped)')
         ax.plot(xs, vals_c, color=color, linestyle='--', marker='s', label=f'{label} (cropped)')
+        for x, v in zip(xs, vals_u):
+            ax.annotate(f'{v:.2f}', (x, v), textcoords='offset points', xytext=(0, 6),
+                        ha='center', fontsize=7, color=color)
+        for x, v in zip(xs, vals_c):
+            ax.annotate(f'{v:.2f}', (x, v), textcoords='offset points', xytext=(0, -12),
+                        ha='center', fontsize=7, color=color)
 
     ax.set_xticks(xs)
     ax.set_xticklabels(floor_labels, fontsize=9)

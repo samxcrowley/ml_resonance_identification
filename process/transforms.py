@@ -25,22 +25,15 @@ def _crop(
     target,
     metadata,
     crop_energy=0.0,
-    crop_angle=False,
-    crop_channel=False,
-    per_channel_energy_crop=False,
-    min_angles=3,
-    min_channels=1,
-    min_channel_coverage=0.1,
-    visibility_window=5,
+    min_angles=1,
+    min_pp_combos=1,
     use_info_weight=False):
 
     FLOOR = -7.9
+    VISIBILITY_WINDOW = 5
 
     E, C = tensor.shape
-
-    n_entrances = metadata['n_entrances']
-    n_exits = metadata['n_exits']
-    n_pp = n_entrances * n_exits
+    n_pp = metadata['n_entrances'] * metadata['n_exits']
     n_angles = metadata['n_angles']
 
     max_resonances = target['energy'].shape[0]
@@ -49,52 +42,44 @@ def _crop(
 
     crop_mask = (tensor > FLOOR).float()
 
-    # global energy crop — same window applied to all channels
-    if crop_energy > 0.0:
-        E_crop_ratio = torch.rand(1).item() * crop_energy
-        E_keep_ratio = 1.0 - E_crop_ratio
-        e_start = torch.rand(1).item() * (1.0 - E_keep_ratio)
-        e_end = e_start + E_keep_ratio
-        crop_mask[:int(e_start * E), :] = 0.0
-        crop_mask[int(e_end * E):,   :] = 0.0
+    # drop pp_combos
+    if min_pp_combos < n_pp:
+        n_keep = torch.randint(min_pp_combos, n_pp + 1, (1,)).item()
+        kept = torch.randperm(n_pp)[:n_keep]
+        drop = torch.ones(n_pp, dtype=torch.bool)
+        drop[kept] = False
+        for pp in drop.nonzero(as_tuple=True)[0].tolist():
+            crop_mask[:, pp * n_angles:(pp + 1) * n_angles] = 0.0
 
-    # drop entrance channels
-    if crop_channel:
-        n_keep = torch.randint(min_channels, n_entrances + 1, (1,)).item()
-        kept_entrances = torch.randperm(n_entrances)[:n_keep]
-        for ent in range(n_entrances):
-            if ent not in kept_entrances:
-                for ext in range(n_exits):
-                    pp = ent * n_exits + ext
-                    start = pp * n_angles
-                    end = start + n_angles
-                    crop_mask[:, start:end] = 0.0
-
-    # drop angles across all channels
-    if crop_angle:
-        max_drop = n_angles - min_angles
-        if max_drop > 0:
-            n_drop = torch.randint(0, max_drop + 1, (1,)).item()
-            drop_indices = torch.randperm(n_angles)[:n_drop]
-            cols = [pp * n_angles + a for a in drop_indices for pp in range(n_pp)]
-            if cols:
-                crop_mask[:, cols] = 0.0
-
-    # per-channel energy crop — each pp_combo gets its own independent energy window,
-    # sampled within that channel's currently active rows (respects prior global crop)
-    if per_channel_energy_crop:
-        for pp_idx in range(n_pp):
-            col_s = pp_idx * n_angles
+    # drop angles
+    if min_angles < n_angles:
+        for pp in range(n_pp):
+            col_s = pp * n_angles
             col_e = col_s + n_angles
-            active_rows = crop_mask[:, col_s:col_e].sum(dim=1).nonzero(as_tuple=True)[0]
-            if len(active_rows) == 0:
-                continue  # already fully masked, skip
-            row_lo = active_rows[0].item()
-            row_hi = active_rows[-1].item() + 1
+            if crop_mask[:, col_s:col_e].sum() == 0:
+                continue  # pp_combo already fully masked
+            n_keep = torch.randint(min_angles, n_angles + 1, (1,)).item()
+            kept = torch.randperm(n_angles)[:n_keep]
+            drop = torch.ones(n_angles, dtype=torch.bool)
+            drop[kept] = False
+            for a in drop.nonzero(as_tuple=True)[0].tolist():
+                crop_mask[:, col_s + a] = 0.0
+
+    # crop energy per-pp-combo
+    if crop_energy > 0.0:
+        for pp in range(n_pp):
+            col_s = pp * n_angles
+            col_e = col_s + n_angles
+            active = crop_mask[:, col_s:col_e].sum(dim=1).nonzero(as_tuple=True)[0]
+            if len(active) == 0:
+                continue
+            row_lo = active[0].item()
+            row_hi = active[-1].item() + 1
             active_len = row_hi - row_lo
-            keep = max(1, int((min_channel_coverage + torch.rand(1).item() * (1.0 - min_channel_coverage)) * active_len))
-            start_offset = torch.randint(0, max(1, active_len - keep + 1), (1,)).item()
-            win_lo = row_lo + start_offset
+            ratio = torch.rand(1).item() * crop_energy
+            keep = max(1, int((1.0 - ratio) * active_len))
+            offset = torch.randint(0, max(1, active_len - keep + 1), (1,)).item()
+            win_lo = row_lo + offset
             win_hi = win_lo + keep
             crop_mask[:win_lo, col_s:col_e] = 0.0
             crop_mask[win_hi:,  col_s:col_e] = 0.0
@@ -103,12 +88,12 @@ def _crop(
     cropped_data = torch.where(crop_mask > 0, tensor, torch.tensor(-8.0))
     cropped_tensor = torch.stack([cropped_data, crop_mask], dim=0)
 
-    # keep resonances that have at least some active data near their energy position
+    # keep resonances with data within VISIBILITY_WINDOW bins of their energy
     res_mask = torch.zeros(max_resonances, dtype=torch.bool)
     for i in range(n_true):
         e_bin = int(energies[i].item() * E)
-        bin_lo = max(0, e_bin - visibility_window)
-        bin_hi = min(E, e_bin + visibility_window)
+        bin_lo = max(0, e_bin - VISIBILITY_WINDOW)
+        bin_hi = min(E, e_bin + VISIBILITY_WINDOW)
         if crop_mask[bin_lo:bin_hi, :].sum() > 0:
             res_mask[i] = True
 

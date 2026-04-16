@@ -84,6 +84,10 @@ def _crop(
             crop_mask[:win_lo, col_s:col_e] = 0.0
             crop_mask[win_hi:,  col_s:col_e] = 0.0
 
+    # safety check (a very small portion of samples have zero cross section for some reason)
+    if crop_mask.sum() == 0:
+        crop_mask = torch.ones_like(crop_mask)
+
     # build output tensor [2, E, C]
     cropped_data = torch.where(crop_mask > 0, tensor, torch.tensor(-8.0))
     cropped_tensor = torch.stack([cropped_data, crop_mask], dim=0)

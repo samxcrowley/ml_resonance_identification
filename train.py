@@ -252,18 +252,18 @@ def train(params):
             if epoch % epoch_n_print == 0:
                 print(
                     f'Epoch {epoch:03d}/{n_epochs} '
-                    f'| Train {train_m["total_loss"]:.4f} '
-                    f'| Val {val_m["total_loss"]:.4f} '
-                    f'| Train C {train_m["class_loss"]:.4f} '
-                    f'| Val C {val_m["class_loss"]:.4f} '
-                    f'| Train E {train_m["energy_loss"]:.4f} '
-                    f'| Val E {val_m["energy_loss"]:.4f} '
-                    f'| Train J {train_m["j_loss"]:.4f} '
-                    f'| Val J {val_m["j_loss"]:.4f} '
-                    f'| Train P {train_m["pi_loss"]:.4f} '
-                    f'| Val P {val_m["pi_loss"]:.4f} '
-                    f'| Train G {train_m["gamma_loss"]:.4f} '
-                    f'| Val G {val_m["gamma_loss"]:.4f}'
+                    f'|| T{train_m["total_loss"]:.4f} '
+                    f'| V {val_m["total_loss"]:.4f} '
+                    f'|| T_C {train_m["class_loss"]:.4f} '
+                    f'| V_C {val_m["class_loss"]:.4f} '
+                    f'|| T_E {train_m["energy_loss"]:.4f} '
+                    f'| V_E {val_m["energy_loss"]:.4f} '
+                    f'|| T_G {train_m["gamma_loss"]:.4f} '
+                    f'| V_G {val_m["gamma_loss"]:.4f} '
+                    f'|| T_J {train_m["j_loss"]:.4f} '
+                    f'| V_J {val_m["j_loss"]:.4f} '
+                    f'|| T_P {train_m["pi_loss"]:.4f} '
+                    f'| V_P {val_m["pi_loss"]:.4f}'
                 )
 
     except KeyboardInterrupt:

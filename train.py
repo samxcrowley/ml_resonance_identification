@@ -252,7 +252,7 @@ def train(params):
             if epoch % epoch_n_print == 0:
                 print(
                     f'Epoch {epoch:03d}/{n_epochs} '
-                    f'|| T{train_m["total_loss"]:.4f} '
+                    f'|| T {train_m["total_loss"]:.4f} '
                     f'| V {val_m["total_loss"]:.4f} '
                     f'|| T_C {train_m["class_loss"]:.4f} '
                     f'| V_C {val_m["class_loss"]:.4f} '

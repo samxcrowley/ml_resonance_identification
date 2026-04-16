@@ -117,6 +117,6 @@ def preprocess(pattern, workers=1, train_split=0.9):
 
 if __name__ == '__main__':
 
-    pattern = 'nlevel_20'
+    pattern = sys.argv[1]
 
     preprocess(pattern)

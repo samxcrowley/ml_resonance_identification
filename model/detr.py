@@ -156,8 +156,9 @@ class DETR_Loss(nn.Module):
         self.matcher = HungarianMatcher()
 
     def _focal_loss(self, pred_logits, targets, alpha=0.25, gamma=2.0):
-        ce = F.cross_entropy(pred_logits, targets, reduction='none')
-        probs = pred_logits.softmax(-1)
+        pred_logits_f = pred_logits.float()
+        ce = F.cross_entropy(pred_logits_f, targets, reduction='none')
+        probs = pred_logits_f.softmax(-1)
         p_t = probs[range(len(targets)), targets]
         focal_weight = (1 - p_t) ** gamma
         alpha_t = torch.where(targets == 1, alpha, 1 - alpha)

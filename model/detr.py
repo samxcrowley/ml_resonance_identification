@@ -37,7 +37,7 @@ class DETR_Model(nn.Module):
 
         self.backbone = backbone.Backbone(
             d_transformer=self.d_transformer,
-            norm=params['backbone_norm']
+            norm=params['norm']
         )
 
         self.encoder = transformer_encoder.Transformer_Encoder_Model(

@@ -121,6 +121,110 @@ def _crop(
 
     return cropped_tensor, cropped_target
 
+def _crop_exp(
+        tensor,
+        target,
+        metadata,
+        min_pp_combos=1,
+        max_pp_combos=5,
+        sparse_prob=0.5,
+        sparse_angle_range=(1, 4),
+        dense_angle_range=(7, 16),
+        energy_crop=0.8,
+        use_info_weight=False):
+
+    FLOOR = -7.9
+    VISIBILITY_WINDOW = 5
+
+    E, C = tensor.shape
+    n_pp = metadata['n_entrances'] * metadata['n_exits']
+    n_angles = metadata['n_angles']
+
+    max_resonances = target['energy'].shape[0]
+    energies = target['energy'].squeeze(1)
+    n_true = int(target['class'][:, 1].sum().item())
+
+    crop_mask = (tensor > FLOOR).float()
+
+    # pick pp_combos to keep
+    max_kept = min(max_pp_combos, n_pp)
+    lo_pp    = max(1, min(min_pp_combos, max_kept))
+    n_keep_pp = torch.randint(lo_pp, max_kept + 1, (1,)).item()
+    kept_pp = torch.randperm(n_pp)[:n_keep_pp].tolist()
+    keep_set = set(kept_pp)
+    for pp in range(n_pp):
+        if pp not in keep_set:
+            crop_mask[:, pp * n_angles:(pp + 1) * n_angles] = 0.0
+
+    # angle selection
+    for pp in kept_pp:
+        col_s = pp * n_angles
+        if torch.rand(1).item() < sparse_prob:
+            a_lo, a_hi = sparse_angle_range
+        else:
+            a_lo, a_hi = dense_angle_range
+        a_hi = min(a_hi, n_angles)
+        a_lo = max(1, min(a_lo, a_hi))
+        n_keep_a = torch.randint(a_lo, a_hi + 1, (1,)).item()
+        kept_angles = torch.randperm(n_angles)[:n_keep_a].tolist()
+        keep_a_set = set(kept_angles)
+        for a in range(n_angles):
+            if a not in keep_a_set:
+                crop_mask[:, col_s + a] = 0.0
+
+        # per-angle energy cropping
+        if energy_crop > 0.0:
+            for a in kept_angles:
+                ch_col = col_s + a
+                active_rows = crop_mask[:, ch_col].nonzero(as_tuple=True)[0]
+                if len(active_rows) == 0:
+                    continue
+                row_lo = active_rows[0].item()
+                row_hi = active_rows[-1].item() + 1
+                active_len = row_hi - row_lo
+                ratio = torch.rand(1).item() * energy_crop
+                keep = max(1, int((1.0 - ratio) * active_len))
+                offset = torch.randint(0, max(1, active_len - keep + 1), (1,)).item()
+                win_lo = row_lo + offset
+                win_hi = win_lo + keep
+                crop_mask[:win_lo, ch_col] = 0.0
+                crop_mask[win_hi:,  ch_col] = 0.0
+
+    # safety
+    if crop_mask.sum() == 0:
+        crop_mask = torch.ones_like(crop_mask)
+
+    cropped_data = torch.where(crop_mask > 0, tensor, torch.tensor(-8.0))
+    cropped_tensor = torch.stack([cropped_data, crop_mask], dim=0)
+
+    # resonance visibility filter
+    res_mask = torch.zeros(max_resonances, dtype=torch.bool)
+    for i in range(n_true):
+        e_bin = int(energies[i].item() * E)
+        bin_lo = max(0, e_bin - VISIBILITY_WINDOW)
+        bin_hi = min(E, e_bin + VISIBILITY_WINDOW)
+        if crop_mask[bin_lo:bin_hi, :].sum() > 0:
+            res_mask[i] = True
+    n_kept = res_mask.sum().item()
+
+    cropped_target = {}
+    target_keys = ['class', 'energy', 'gamma', 'gamma_mask', 'jpi_index']
+    for k in target_keys:
+        filtered = target[k][res_mask]
+        pad_shape = (max_resonances - n_kept, *filtered.shape[1:])
+        cropped_target[k] = torch.cat([filtered, torch.zeros(pad_shape, dtype=filtered.dtype)], dim=0)
+
+    cropped_target['class'][n_kept:, 0] = 1.0
+    cropped_target['n_res'] = _normalise(torch.tensor(n_kept, dtype=target['n_res'].dtype), 0, data.MAX_RESONANCES)
+    cropped_target['e_min'] = target['e_min']
+    cropped_target['e_max'] = target['e_max']
+
+    if use_info_weight:
+        info_weight = _get_info_weights(cropped_target, n_kept, cropped_tensor[1], metadata)
+        cropped_target['info_weight'] = info_weight
+
+    return cropped_tensor, cropped_target
+
 # information weight per resonance
 # W = sum_c[N_c * G_c] / NG
 # N = total non-masked data points within G of energy level

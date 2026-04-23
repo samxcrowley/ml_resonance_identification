@@ -91,20 +91,41 @@ def train(params):
     header_name = params['header']
     header = Header(filename=header_name)
 
-    crop_params = {
-        'crop_energy': params.get('crop_energy', 0.0),
-        'min_angles': params.get('min_angles', 1),
-        'min_pp_combos': params.get('min_pp_combos', 1),
-        'use_info_weight': params.get('use_info_weight', False),
-    }
+    # select crop function (_crop or crop_exp for fine-tuning)
+    crop_fn_name = params.get('crop_fn_name', '_crop')
+    crop_fn = getattr(transforms, crop_fn_name)
+    print(f'Using crop function: transforms.{crop_fn_name}')
+
+    if crop_fn_name == '_crop_exp':
+        crop_params = {
+            'min_pp_combos': params['min_pp_combos'],
+            'max_pp_combos': params['max_pp_combos'],
+            'sparse_prob': params['sparse_prob'],
+            'sparse_angle_range': tuple(params['sparse_angle_range']),
+            'dense_angle_range': tuple(params['dense_angle_range']),
+            'energy_crop': params['crop_energy'],
+            'use_info_weight': params['use_info_weight'],
+        }
+    else:
+        crop_params = {
+            'crop_energy': params['crop_energy'],
+            'min_angles': params['min_angles'],
+            'min_pp_combos': params['min_pp_combos'],
+            'use_info_weight': params['use_info_weight'],
+        }
 
     curriculum_epochs = params.get('curriculum_epochs', 0)
-    if curriculum_epochs > 0:
+
+    # curriculum only for default cropping, not fine-tuning
+    if curriculum_epochs > 0 and crop_fn_name == '_crop':
         crop_energy_max = crop_params['crop_energy']
         min_angles_final = crop_params['min_angles']
         min_pp_combos_final = crop_params['min_pp_combos']
         n_pp = params['n_entrances'] * params['n_exits']
         n_angles = params['n_angles']
+
+    elif curriculum_epochs > 0:
+        curriculum_epochs = 0
 
     model_cls = MODELS[params['model']]
     model = model_cls(header, params)
@@ -120,7 +141,7 @@ def train(params):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f'Using device: {device}\n')
 
-    base_dataset = data.ResonanceDataset(data_path, crop_params, transform)
+    base_dataset = data.ResonanceDataset(data_path, crop_params, transform, crop_fn=crop_fn)
     dataset = base_dataset
 
     # -1 in params['n_subset'] indicates to use the entire dataset

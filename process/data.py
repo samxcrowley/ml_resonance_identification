@@ -250,7 +250,8 @@ class ResonanceDataset(Dataset):
     # pass tensors, targets, metadata to share data from another dataset
     # without reloading from disk
     def __init__(self, path, crop_params=None, transform=None,
-                 tensors=None, targets=None, metadata=None):
+                 tensors=None, targets=None, metadata=None,
+                 crop_fn=None):
 
         if tensors is not None and targets is not None:
             self.tensors = tensors
@@ -272,6 +273,7 @@ class ResonanceDataset(Dataset):
 
         self.crop_params = crop_params or {}
         self.transform = transform
+        self.crop_fn = crop_fn if crop_fn is not None else transforms._crop
 
     def __len__(self):
         return len(self.tensors)
@@ -282,7 +284,7 @@ class ResonanceDataset(Dataset):
         target = {key: self.targets[key][idx] for key in self.targets}
 
         # crop
-        tensor, target = transforms._crop(tensor, target, self.metadata, **self.crop_params)
+        tensor, target = self.crop_fn(tensor, target, self.metadata, **self.crop_params)
 
         # initial transform
         if self.transform:

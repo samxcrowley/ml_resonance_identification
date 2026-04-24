@@ -106,6 +106,15 @@ def train(params):
             'energy_crop': params['crop_energy'],
             'use_info_weight': params['use_info_weight'],
         }
+    elif crop_fn_name == '_crop_v2':
+        crop_params = {
+            'all_combo_prob':    params['all_combo_prob'],
+            'elastic_only_prob': params['elastic_only_prob'],
+            'min_random_keep':   params['min_random_keep'],
+            'crop_energy':       params['crop_energy'],
+            'min_angles':        params['min_angles'],
+            'use_info_weight':   params['use_info_weight'],
+        }
     else:
         crop_params = {
             'crop_energy': params['crop_energy'],
@@ -116,13 +125,16 @@ def train(params):
 
     curriculum_epochs = params.get('curriculum_epochs', 0)
 
-    # curriculum only for default cropping, not fine-tuning
-    if curriculum_epochs > 0 and crop_fn_name == '_crop':
+    # crop curriculums energy, angle, and channels
+    # crop v2 curriculums energy and angle, but NOT channels
+    curriculum_crops = ('_crop', '_crop_v2')
+    if curriculum_epochs > 0 and crop_fn_name in curriculum_crops:
         crop_energy_max = crop_params['crop_energy']
         min_angles_final = crop_params['min_angles']
-        min_pp_combos_final = crop_params['min_pp_combos']
         n_pp = params['n_entrances'] * params['n_exits']
         n_angles = params['n_angles']
+        if crop_fn_name == '_crop':
+            min_pp_combos_final = crop_params['min_pp_combos']
 
     elif curriculum_epochs > 0:
         curriculum_epochs = 0
@@ -248,7 +260,8 @@ def train(params):
                 progress = min(1.0, epoch / curriculum_epochs)
                 base_dataset.crop_params['crop_energy'] = crop_energy_max * progress
                 base_dataset.crop_params['min_angles'] = round(n_angles - (n_angles - min_angles_final) * progress)
-                base_dataset.crop_params['min_pp_combos'] = round(n_pp - (n_pp - min_pp_combos_final) * progress)
+                if crop_fn_name == '_crop':
+                    base_dataset.crop_params['min_pp_combos'] = round(n_pp - (n_pp - min_pp_combos_final) * progress)
 
             train_m = run_epoch(epoch, model, train_loader, loss_fn, False, optimiser, device, scaler)
             val_m = run_epoch(epoch, model, val_loader, loss_fn, True, optimiser, device)

@@ -131,6 +131,7 @@ def _crop_exp(
         sparse_angle_range=(1, 4),
         dense_angle_range=(7, 16),
         energy_crop=0.8,
+        pp_pool=None,
         use_info_weight=False):
 
     FLOOR = -7.9
@@ -146,11 +147,17 @@ def _crop_exp(
 
     crop_mask = (tensor > FLOOR).float()
 
-    # pick pp_combos to keep
-    max_kept = min(max_pp_combos, n_pp)
+    # restricts the set of combos available to pick from
+    # used by _crop_mix to force elastic-only samples
+    if pp_pool is None:
+        pp_pool = list(range(n_pp))
+    pool_size = len(pp_pool)
+
+    max_kept = min(max_pp_combos, pool_size)
     lo_pp    = max(1, min(min_pp_combos, max_kept))
     n_keep_pp = torch.randint(lo_pp, max_kept + 1, (1,)).item()
-    kept_pp = torch.randperm(n_pp)[:n_keep_pp].tolist()
+    perm = torch.randperm(pool_size)[:n_keep_pp].tolist()
+    kept_pp = [pp_pool[i] for i in perm]
     keep_set = set(kept_pp)
     for pp in range(n_pp):
         if pp not in keep_set:
@@ -189,6 +196,132 @@ def _crop_exp(
                 win_hi = win_lo + keep
                 crop_mask[:win_lo, ch_col] = 0.0
                 crop_mask[win_hi:,  ch_col] = 0.0
+
+    # safety
+    if crop_mask.sum() == 0:
+        crop_mask = torch.ones_like(crop_mask)
+
+    cropped_data = torch.where(crop_mask > 0, tensor, torch.tensor(-8.0))
+    cropped_tensor = torch.stack([cropped_data, crop_mask], dim=0)
+
+    # resonance visibility filter
+    res_mask = torch.zeros(max_resonances, dtype=torch.bool)
+    for i in range(n_true):
+        e_bin = int(energies[i].item() * E)
+        bin_lo = max(0, e_bin - VISIBILITY_WINDOW)
+        bin_hi = min(E, e_bin + VISIBILITY_WINDOW)
+        if crop_mask[bin_lo:bin_hi, :].sum() > 0:
+            res_mask[i] = True
+    n_kept = res_mask.sum().item()
+
+    cropped_target = {}
+    target_keys = ['class', 'energy', 'gamma', 'gamma_mask', 'jpi_index']
+    for k in target_keys:
+        filtered = target[k][res_mask]
+        pad_shape = (max_resonances - n_kept, *filtered.shape[1:])
+        cropped_target[k] = torch.cat([filtered, torch.zeros(pad_shape, dtype=filtered.dtype)], dim=0)
+
+    cropped_target['class'][n_kept:, 0] = 1.0
+    cropped_target['n_res'] = _normalise(torch.tensor(n_kept, dtype=target['n_res'].dtype), 0, data.MAX_RESONANCES)
+    cropped_target['e_min'] = target['e_min']
+    cropped_target['e_max'] = target['e_max']
+
+    if use_info_weight:
+        info_weight = _get_info_weights(cropped_target, n_kept, cropped_tensor[1], metadata)
+        cropped_target['info_weight'] = info_weight
+
+    return cropped_tensor, cropped_target
+
+# drop pp combos from the start, with fixed probabilities
+# set in params, but default:
+# 50% - elastic only (1-3 elastic combos kept)
+# 25% - all combos kept
+# 25% - any combos dropped, keeping at least 1
+def _crop_v2(
+        tensor,
+        target,
+        metadata,
+        all_combo_prob=0.25,
+        elastic_only_prob=0.5,
+        min_random_keep=1,
+        crop_energy=0.0,
+        min_angles=1,
+        use_info_weight=False):
+
+    FLOOR = -7.9
+    VISIBILITY_WINDOW = 5
+
+    E, C = tensor.shape
+    n_pp = metadata['n_entrances'] * metadata['n_exits']
+    n_angles = metadata['n_angles']
+
+    max_resonances = target['energy'].shape[0]
+    energies = target['energy'].squeeze(1)
+    n_true = int(target['class'][:, 1].sum().item())
+
+    crop_mask = (tensor > FLOOR).float()
+
+    # get elastic pp_combo indices
+    pp_combos_list = metadata.get('pp_combos', None)
+    if pp_combos_list is not None:
+        elastic_pool = [i for i, pp in enumerate(pp_combos_list) if pp[0] == pp[1]]
+    else:
+        n_ent = metadata['n_entrances']
+        n_ext = metadata['n_exits']
+        elastic_pool = [i * n_ext + i for i in range(min(n_ent, n_ext))]
+
+    # pick pp_combo selection mode
+    r = torch.rand(1).item()
+    
+    if r < all_combo_prob: # all combos kept
+        kept_pp_set = set(range(n_pp))
+
+    elif r < all_combo_prob + elastic_only_prob: # elastic-only
+        n_keep = torch.randint(1, len(elastic_pool) + 1, (1,)).item()
+        kept = torch.randperm(len(elastic_pool))[:n_keep].tolist()
+        kept_pp_set = set(elastic_pool[i] for i in kept)
+
+    else: # drop at random
+        n_keep = torch.randint(min_random_keep, n_pp + 1, (1,)).item()
+        kept_pp_set = set(torch.randperm(n_pp)[:n_keep].tolist())
+
+    # apply pp_combo mask
+    for pp in range(n_pp):
+        if pp not in kept_pp_set:
+            crop_mask[:, pp * n_angles:(pp + 1) * n_angles] = 0.0
+
+    # angle cropping
+    if min_angles < n_angles:
+        for pp in kept_pp_set:
+            col_s = pp * n_angles
+            col_e = col_s + n_angles
+            if crop_mask[:, col_s:col_e].sum() == 0:
+                continue
+            n_keep_a = torch.randint(min_angles, n_angles + 1, (1,)).item()
+            kept_a = torch.randperm(n_angles)[:n_keep_a]
+            drop = torch.ones(n_angles, dtype=torch.bool)
+            drop[kept_a] = False
+            for a in drop.nonzero(as_tuple=True)[0].tolist():
+                crop_mask[:, col_s + a] = 0.0
+
+    # energy cropping
+    if crop_energy > 0.0:
+        for pp in kept_pp_set:
+            col_s = pp * n_angles
+            col_e = col_s + n_angles
+            active = crop_mask[:, col_s:col_e].sum(dim=1).nonzero(as_tuple=True)[0]
+            if len(active) == 0:
+                continue
+            row_lo = active[0].item()
+            row_hi = active[-1].item() + 1
+            active_len = row_hi - row_lo
+            ratio = torch.rand(1).item() * crop_energy
+            keep = max(1, int((1.0 - ratio) * active_len))
+            offset = torch.randint(0, max(1, active_len - keep + 1), (1,)).item()
+            win_lo = row_lo + offset
+            win_hi = win_lo + keep
+            crop_mask[:win_lo, col_s:col_e] = 0.0
+            crop_mask[win_hi:,  col_s:col_e] = 0.0
 
     # safety
     if crop_mask.sum() == 0:

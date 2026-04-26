@@ -27,7 +27,8 @@ def _crop(
     crop_energy=0.0,
     min_angles=1,
     min_pp_combos=1,
-    use_info_weight=False):
+    use_info_weight=False,
+    elastic_dropout_prob=0.0):
 
     FLOOR = -7.9
     VISIBILITY_WINDOW = 5
@@ -41,6 +42,13 @@ def _crop(
     n_true = int(target['class'][:, 1].sum().item())
 
     crop_mask = (tensor > FLOOR).float()
+
+    # drop all inelastic channels
+    if elastic_dropout_prob > 0.0 and torch.rand(1).item() < elastic_dropout_prob:
+        pp_combos = metadata.get('pp_combos', [])
+        for pp_idx, (pp_in, pp_out) in enumerate(pp_combos):
+            if pp_in != pp_out:
+                crop_mask[:, pp_idx * n_angles:(pp_idx + 1) * n_angles] = 0.0
 
     # drop pp_combos
     if min_pp_combos < n_pp:

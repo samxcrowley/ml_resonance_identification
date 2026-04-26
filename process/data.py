@@ -96,7 +96,6 @@ def process_json(data, n_y=512, clamp=1e-8):
     energy_targets = []
     gamma_targets = []
     gamma_mask_targets = []
-    n_res_targets = []
     jpi_index_targets = []
     e_min_targets = []
     e_max_targets = []
@@ -207,8 +206,6 @@ def process_json(data, n_y=512, clamp=1e-8):
         gamma_targets.append(gamma_target)
         gamma_mask_targets.append(gamma_mask_target)
         jpi_index_targets.append(jpi_index_target)
-        n_res_norm = transforms._normalise(n_resonances, 0, MAX_RESONANCES)
-        n_res_targets.append(n_res_norm)
         e_min_targets.append(e_min)
         e_max_targets.append(e_max)
 
@@ -218,7 +215,6 @@ def process_json(data, n_y=512, clamp=1e-8):
         'gamma': torch.stack(gamma_targets),
         'gamma_mask': torch.stack(gamma_mask_targets),
         'jpi_index': torch.stack(jpi_index_targets),
-        'n_res': torch.tensor(n_res_targets, dtype=torch.float32),
         'e_min': torch.tensor(e_min_targets, dtype=torch.float32),
         'e_max': torch.tensor(e_max_targets, dtype=torch.float32),
     }

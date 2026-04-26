@@ -112,7 +112,6 @@ def _crop(
         cropped_target[k] = torch.cat([filtered, torch.zeros(pad_shape, dtype=filtered.dtype)], dim=0)
 
     cropped_target['class'][n_kept:, 0] = 1.0
-    cropped_target['n_res'] = _normalise(torch.tensor(n_kept, dtype=target['n_res'].dtype), 0, data.MAX_RESONANCES)
     cropped_target['e_min'] = target['e_min']
     cropped_target['e_max'] = target['e_max']
 

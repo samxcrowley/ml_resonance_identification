@@ -242,31 +242,19 @@ def process_json(data, n_y=512, clamp=1e-8):
 
 class ResonanceDataset(Dataset):
 
-    # accepts preprocessed .pt files only
-    # pass tensors, targets, metadata to share data from another dataset
-    # without reloading from disk
     # channel_filter: 'elastic' (pp_in==pp_out), 'inelastic' (pp_in!=pp_out), or None
     def __init__(self, path, crop_params=None, transform=None,
-                 tensors=None, targets=None, metadata=None,
                  crop_fn=None, channel_filter=None):
 
-        if tensors is not None and targets is not None:
-            self.tensors = tensors
-            self.targets = targets
-            default_metadata = {
-                'n_entrances': 3, 'n_exits': 3,
-                'n_angles': self.tensors[0].shape[1] // 9,
-            }
-            self.metadata = metadata or default_metadata
-        else:
-            saved = torch.load(path, weights_only=False)
-            self.tensors = saved['tensors']
-            self.targets = saved['targets']
-            default_metadata = {
-                'n_entrances': 3, 'n_exits': 3,
-                'n_angles': self.tensors[0].shape[1] // 9,
-            }
-            self.metadata = saved.get('metadata', default_metadata)
+        saved = torch.load(path, weights_only=False)
+        self.tensors = saved['tensors']
+        self.targets = saved['targets']
+        
+        default_metadata = {
+            'n_entrances': 3, 'n_exits': 3,
+            'n_angles': self.tensors[0].shape[1] // 9,
+        }
+        self.metadata = saved.get('metadata', default_metadata)
 
         if channel_filter is not None:
             self.apply_channel_filter(channel_filter)

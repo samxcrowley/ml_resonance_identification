@@ -45,7 +45,9 @@ def _collect_records(run_dir, do_crop, width_tolerance):
     if do_crop:
         crop_params = {'crop_energy': 0.5, 'min_angles': 3, 'min_pp_combos': 1}
 
-    dataset = data.ResonanceDataset(test_data_path, crop_params, transform)
+    channel_filter = params.get('channel_filter', None)
+    dataset = data.ResonanceDataset(test_data_path, crop_params, transform,
+                                    channel_filter=channel_filter)
     loader = DataLoader(dataset, batch_size=64, shuffle=False)
 
     loss_fn = DETR_Loss(header, params)

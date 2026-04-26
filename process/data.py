@@ -249,9 +249,10 @@ class ResonanceDataset(Dataset):
     # accepts preprocessed .pt files only
     # pass tensors, targets, metadata to share data from another dataset
     # without reloading from disk
+    # channel_filter: 'elastic' (pp_in==pp_out), 'inelastic' (pp_in!=pp_out), or None
     def __init__(self, path, crop_params=None, transform=None,
                  tensors=None, targets=None, metadata=None,
-                 crop_fn=None):
+                 crop_fn=None, channel_filter=None):
 
         if tensors is not None and targets is not None:
             self.tensors = tensors
@@ -271,9 +272,32 @@ class ResonanceDataset(Dataset):
             }
             self.metadata = saved.get('metadata', default_metadata)
 
+        if channel_filter is not None:
+            self.apply_channel_filter(channel_filter)
+
         self.crop_params = crop_params or {}
         self.transform = transform
         self.crop_fn = crop_fn if crop_fn is not None else transforms._crop
+
+    def apply_channel_filter(self, channel_filter):
+
+        pp_combos = self.metadata.get('pp_combos', [])
+        n_angles = self.metadata['n_angles']
+
+        if channel_filter == 'elastic':
+            keep = [i for i, (pp_in, pp_out) in enumerate(pp_combos) if pp_in == pp_out]
+        elif channel_filter == 'inelastic':
+            keep = [i for i, (pp_in, pp_out) in enumerate(pp_combos) if pp_in != pp_out]
+        else:
+            raise ValueError(f"Unknown channel_filter: {channel_filter!r} (expected 'elastic' or 'inelastic')")
+
+        keep_cols = [i * n_angles + a for i in keep for a in range(n_angles)]
+        self.tensors = [t[:, keep_cols] for t in self.tensors]
+
+        filtered_pp = [pp_combos[i] for i in keep]
+        self.metadata = dict(self.metadata)
+        self.metadata['pp_combos'] = filtered_pp
+        self.metadata['n_pp_combos'] = len(filtered_pp)
 
     def __len__(self):
         return len(self.tensors)

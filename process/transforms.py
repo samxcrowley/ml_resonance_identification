@@ -33,7 +33,7 @@ def _crop(
     VISIBILITY_WINDOW = 5
 
     E, C = tensor.shape
-    n_pp = metadata['n_entrances'] * metadata['n_exits']
+    n_pp = metadata.get('n_pp_combos', metadata['n_entrances'] * metadata['n_exits'])
     n_angles = metadata['n_angles']
 
     max_resonances = target['energy'].shape[0]

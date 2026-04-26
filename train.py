@@ -121,7 +121,9 @@ def train(params):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f'Using device: {device}\n')
 
-    base_dataset = data.ResonanceDataset(data_path, crop_params, transform, crop_fn=transforms._crop)
+    channel_filter = params.get('channel_filter', None)
+    base_dataset = data.ResonanceDataset(data_path, crop_params, transform, crop_fn=transforms._crop,
+                                         channel_filter=channel_filter)
     dataset = base_dataset
 
     # -1 in params['n_subset'] indicates to use the entire dataset

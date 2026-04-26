@@ -48,7 +48,7 @@ def run_epoch(n_epoch, model, loader, loss_fn, is_eval, optimiser, device, scale
             loss = loss_fn(preds, targets)
 
         if not is_eval:
-            optimiser.zero_grad()
+            optimiser.zero_grad(set_to_none=True)
             if use_amp:
                 scaler.scale(loss['total_loss']).backward()
                 scaler.unscale_(optimiser)
@@ -96,6 +96,7 @@ def train(params):
         'min_angles': params['min_angles'],
         'min_pp_combos': params['min_pp_combos'],
         'use_info_weight': params['use_info_weight'],
+        'elastic_dropout_prob': params.get('elastic_dropout_prob', 0.0),
     }
 
     curriculum_epochs = params.get('curriculum_epochs', 0)
@@ -125,8 +126,6 @@ def train(params):
     base_dataset = data.ResonanceDataset(data_path, crop_params, transform, crop_fn=transforms._crop,
                                          channel_filter=channel_filter)
     dataset = base_dataset
-
-    # -1 in params['n_subset'] indicates to use the entire dataset
     if n_subset != -1:
         dataset = Subset(base_dataset, np.arange(n_subset))
 
@@ -137,17 +136,8 @@ def train(params):
                                      [train_size, val_size], \
                                         generator=torch.Generator().manual_seed(seed))
 
-    uncropped_val_dataset = data.ResonanceDataset(
-        data_path,
-        tensors=base_dataset.tensors,
-        targets=base_dataset.targets,
-        metadata=base_dataset.metadata)
-    if n_subset != -1:
-        uncropped_val_dataset = Subset(uncropped_val_dataset, np.arange(n_subset))
-    uncropped_val_dataset = Subset(uncropped_val_dataset, val_dataset.indices)
-
     print(f'Training size: {len(train_dataset)}')
-    print(f'Validation size: {len(uncropped_val_dataset)}\n')
+    print(f'Validation size: {len(val_dataset)}\n')
 
     # persistent workers cache dataset state, disable when curriculum
     # updates crop_params between epochs
@@ -161,7 +151,7 @@ def train(params):
                               persistent_workers=use_persistent_train,
                               prefetch_factor=4)
 
-    val_loader = DataLoader(uncropped_val_dataset,
+    val_loader = DataLoader(val_dataset,
                             batch_size=batch_size,
                             shuffle=False,
                             num_workers=num_workers,
@@ -169,7 +159,12 @@ def train(params):
                             persistent_workers=num_workers > 0,
                             prefetch_factor=4)
 
+    torch.backends.cudnn.benchmark = True
+
     model.to(device)
+
+    if device.type == 'cuda':
+        model = torch.compile(model)
 
     use_amp = device.type == 'cuda'
     scaler = torch.amp.GradScaler('cuda') if use_amp else None
@@ -232,11 +227,23 @@ def train(params):
                 base_dataset.crop_params['min_angles'] = round(n_angles - (n_angles - min_angles_final) * progress)
                 base_dataset.crop_params['min_pp_combos'] = round(n_pp - (n_pp - min_pp_combos_final) * progress)
 
+                if epoch == curriculum_epochs and num_workers > 0:
+                    train_loader = DataLoader(train_dataset,
+                                              batch_size=batch_size,
+                                              shuffle=True,
+                                              num_workers=num_workers,
+                                              pin_memory=True,
+                                              persistent_workers=True,
+                                              prefetch_factor=4)
+
             train_m = run_epoch(epoch, model, train_loader, loss_fn, False, optimiser, device, scaler)
-            val_m = run_epoch(epoch, model, val_loader, loss_fn, True, optimiser, device)
+
+            do_eval = epoch % eval_every_n == 0
+            val_m = run_epoch(epoch, model, val_loader, loss_fn, True, optimiser, device) if do_eval else None
 
             if scheduler_type == 'plateau':
-                scheduler.step(val_m['total_loss'])
+                if val_m is not None:
+                    scheduler.step(val_m['total_loss'])
             else:
                 scheduler.step()
 
@@ -244,18 +251,16 @@ def train(params):
 
             for stat in train_stats:
                 results[f'train_{stat}'].append(train_m[stat])
-                results[f'val_{stat}'].append(val_m[stat])
+                results[f'val_{stat}'].append(val_m[stat] if val_m is not None else None)
 
-            # track best model by val loss
-            if val_m['total_loss'] < best_val_loss:
+            # track best model by val loss (only after halfway point for efficiency)
+            if epoch > n_epochs // 2 and val_m is not None and val_m['total_loss'] < best_val_loss:
                 best_val_loss = val_m['total_loss']
                 best_model_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
                 best_optimiser_state = optimiser.state_dict()
 
             if epoch % epoch_n_print == 0:
-                print(
-                    f'Epoch {epoch:03d}/{n_epochs} '
-                    f'|| T {train_m["total_loss"]:.4f} '
+                val_str = (
                     f'| V {val_m["total_loss"]:.4f} '
                     f'|| T_C {train_m["class_loss"]:.4f} '
                     f'| V_C {val_m["class_loss"]:.4f} '
@@ -267,6 +272,11 @@ def train(params):
                     f'| V_J {val_m["j_loss"]:.4f} '
                     f'|| T_P {train_m["pi_loss"]:.4f} '
                     f'| V_P {val_m["pi_loss"]:.4f}'
+                ) if val_m is not None else '| V -'
+                print(
+                    f'Epoch {epoch:03d}/{n_epochs} '
+                    f'|| T {train_m["total_loss"]:.4f} '
+                    + val_str
                 )
 
     except KeyboardInterrupt:

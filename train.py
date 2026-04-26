@@ -91,53 +91,21 @@ def train(params):
     header_name = params['header']
     header = Header(filename=header_name)
 
-    # select crop function (_crop or crop_exp for fine-tuning)
-    crop_fn_name = params.get('crop_fn_name', '_crop')
-    crop_fn = getattr(transforms, crop_fn_name)
-    print(f'Using crop function: transforms.{crop_fn_name}')
-
-    if crop_fn_name == '_crop_exp':
-        crop_params = {
-            'min_pp_combos': params['min_pp_combos'],
-            'max_pp_combos': params['max_pp_combos'],
-            'sparse_prob': params['sparse_prob'],
-            'sparse_angle_range': tuple(params['sparse_angle_range']),
-            'dense_angle_range': tuple(params['dense_angle_range']),
-            'energy_crop': params['crop_energy'],
-            'use_info_weight': params['use_info_weight'],
-        }
-    elif crop_fn_name == '_crop_v2':
-        crop_params = {
-            'all_combo_prob':    params['all_combo_prob'],
-            'elastic_only_prob': params['elastic_only_prob'],
-            'min_random_keep':   params['min_random_keep'],
-            'crop_energy':       params['crop_energy'],
-            'min_angles':        params['min_angles'],
-            'use_info_weight':   params['use_info_weight'],
-        }
-    else:
-        crop_params = {
-            'crop_energy': params['crop_energy'],
-            'min_angles': params['min_angles'],
-            'min_pp_combos': params['min_pp_combos'],
-            'use_info_weight': params['use_info_weight'],
-        }
+    crop_params = {
+        'crop_energy': params['crop_energy'],
+        'min_angles': params['min_angles'],
+        'min_pp_combos': params['min_pp_combos'],
+        'use_info_weight': params['use_info_weight'],
+    }
 
     curriculum_epochs = params.get('curriculum_epochs', 0)
 
-    # crop curriculums energy, angle, and channels
-    # crop v2 curriculums energy and angle, but NOT channels
-    curriculum_crops = ('_crop', '_crop_v2')
-    if curriculum_epochs > 0 and crop_fn_name in curriculum_crops:
+    if curriculum_epochs > 0:
         crop_energy_max = crop_params['crop_energy']
         min_angles_final = crop_params['min_angles']
+        min_pp_combos_final = crop_params['min_pp_combos']
         n_pp = params['n_entrances'] * params['n_exits']
         n_angles = params['n_angles']
-        if crop_fn_name == '_crop':
-            min_pp_combos_final = crop_params['min_pp_combos']
-
-    elif curriculum_epochs > 0:
-        curriculum_epochs = 0
 
     model_cls = MODELS[params['model']]
     model = model_cls(header, params)
@@ -153,7 +121,7 @@ def train(params):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f'Using device: {device}\n')
 
-    base_dataset = data.ResonanceDataset(data_path, crop_params, transform, crop_fn=crop_fn)
+    base_dataset = data.ResonanceDataset(data_path, crop_params, transform, crop_fn=transforms._crop)
     dataset = base_dataset
 
     # -1 in params['n_subset'] indicates to use the entire dataset
@@ -260,8 +228,7 @@ def train(params):
                 progress = min(1.0, epoch / curriculum_epochs)
                 base_dataset.crop_params['crop_energy'] = crop_energy_max * progress
                 base_dataset.crop_params['min_angles'] = round(n_angles - (n_angles - min_angles_final) * progress)
-                if crop_fn_name == '_crop':
-                    base_dataset.crop_params['min_pp_combos'] = round(n_pp - (n_pp - min_pp_combos_final) * progress)
+                base_dataset.crop_params['min_pp_combos'] = round(n_pp - (n_pp - min_pp_combos_final) * progress)
 
             train_m = run_epoch(epoch, model, train_loader, loss_fn, False, optimiser, device, scaler)
             val_m = run_epoch(epoch, model, val_loader, loss_fn, True, optimiser, device)

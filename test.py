@@ -34,7 +34,8 @@ def _collect_records(run_dir, do_crop, width_tolerance):
     header = Header(params['header'])
     model = DETR_Model(header, params)
     checkpoint = torch.load(f'{run_dir}/checkpoint.pt', weights_only=False)
-    model.load_state_dict(checkpoint['model'])
+    state_dict = {k.removeprefix('_orig_mod.'): v for k, v in checkpoint['model'].items()}
+    model.load_state_dict(state_dict)
     model.eval()
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

@@ -11,7 +11,7 @@ from model.detr import DETR_Model, DETR_Loss, HungarianMatcher
 from process.header import Header
 import process.transforms as transforms
 
-test_data_path = 'data/preprocessed/nlevel_20_angle20-170_test.pt'
+test_data_path = 'data/preprocessed/nlevel_20_test.pt'
 
 N_BINS = 512
 E_RANGE_MEV = 8.0
@@ -44,7 +44,7 @@ def _collect_records(run_dir, do_crop, width_tolerance):
     transform = transforms.get_augment_transform(noise_sigma_log10=0.0, amplitude_scale=0.0)
     crop_params = {}
     if do_crop:
-        crop_params = {'crop_energy': 0.5, 'min_angles': 3, 'min_pp_combos': 1}
+        crop_params = {'crop_energy': 0.75, 'min_angles': 1, 'min_pp_combos': 1, 'inelastic_dropout_p': 0.0}
 
     channel_filter = params.get('channel_filter', None)
     dataset = data.ResonanceDataset(test_data_path, crop_params, transform,

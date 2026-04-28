@@ -51,6 +51,9 @@ class Backbone(nn.Module):
         mask = mask.flatten(1)
 
         key_padding_mask = (mask == 0)
+        # Ensure at least one token is unmasked per sample to prevent all-inf attention
+        all_masked = key_padding_mask.all(dim=1, keepdim=True)
+        key_padding_mask = key_padding_mask & ~all_masked
 
         x = self.conv1(x)
         x = self.conv2(x)

@@ -1,3 +1,4 @@
+import gzip
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -96,7 +97,7 @@ def train(params):
         'min_angles': params['min_angles'],
         'min_pp_combos': params['min_pp_combos'],
         'use_info_weight': params['use_info_weight'],
-        'elastic_dropout_prob': params.get('elastic_dropout_prob', 0.0),
+        'inelastic_dropout_p': params.get('inelastic_dropout_p', 0.0),
     }
 
     curriculum_epochs = params.get('curriculum_epochs', 0)
@@ -105,6 +106,7 @@ def train(params):
         crop_energy_max = crop_params['crop_energy']
         min_angles_final = crop_params['min_angles']
         min_pp_combos_final = crop_params['min_pp_combos']
+        inelastic_dropout_p_max = crop_params['inelastic_dropout_p']
         n_pp = params['n_entrances'] * params['n_exits']
         n_angles = params['n_angles']
 
@@ -123,8 +125,7 @@ def train(params):
     print(f'Using device: {device}\n')
 
     channel_filter = params.get('channel_filter', None)
-    base_dataset = data.ResonanceDataset(data_path, crop_params, transform, crop_fn=transforms._crop,
-                                         channel_filter=channel_filter)
+    base_dataset = data.ResonanceDataset(data_path, crop_params, transform, crop_fn=transforms._crop, channel_filter=channel_filter)
     dataset = base_dataset
     if n_subset != -1:
         dataset = Subset(base_dataset, np.arange(n_subset))
@@ -222,10 +223,12 @@ def train(params):
         for epoch in range(1, n_epochs + 1):
 
             if curriculum_epochs > 0:
+
                 progress = min(1.0, epoch / curriculum_epochs)
                 base_dataset.crop_params['crop_energy'] = crop_energy_max * progress
                 base_dataset.crop_params['min_angles'] = round(n_angles - (n_angles - min_angles_final) * progress)
                 base_dataset.crop_params['min_pp_combos'] = round(n_pp - (n_pp - min_pp_combos_final) * progress)
+                base_dataset.crop_params['inelastic_dropout_p'] = inelastic_dropout_p_max * progress
 
                 if epoch == curriculum_epochs and num_workers > 0:
                     train_loader = DataLoader(train_dataset,
@@ -238,7 +241,7 @@ def train(params):
 
             train_m = run_epoch(epoch, model, train_loader, loss_fn, False, optimiser, device, scaler)
 
-            do_eval = epoch % eval_every_n == 0
+            do_eval = epoch % epoch_n_print == 0
             val_m = run_epoch(epoch, model, val_loader, loss_fn, True, optimiser, device) if do_eval else None
 
             if scheduler_type == 'plateau':
@@ -260,24 +263,7 @@ def train(params):
                 best_optimiser_state = optimiser.state_dict()
 
             if epoch % epoch_n_print == 0:
-                val_str = (
-                    f'| V {val_m["total_loss"]:.4f} '
-                    f'|| T_C {train_m["class_loss"]:.4f} '
-                    f'| V_C {val_m["class_loss"]:.4f} '
-                    f'|| T_E {train_m["energy_loss"]:.4f} '
-                    f'| V_E {val_m["energy_loss"]:.4f} '
-                    f'|| T_G {train_m["gamma_loss"]:.4f} '
-                    f'| V_G {val_m["gamma_loss"]:.4f} '
-                    f'|| T_J {train_m["j_loss"]:.4f} '
-                    f'| V_J {val_m["j_loss"]:.4f} '
-                    f'|| T_P {train_m["pi_loss"]:.4f} '
-                    f'| V_P {val_m["pi_loss"]:.4f}'
-                ) if val_m is not None else '| V -'
-                print(
-                    f'Epoch {epoch:03d}/{n_epochs} '
-                    f'|| T {train_m["total_loss"]:.4f} '
-                    + val_str
-                )
+                print(f'Epoch {epoch:03d}/{n_epochs}: Train loss {train_m["total_loss"]:.4f} | Val loss {val_m["total_loss"]:.4f}')
 
     except KeyboardInterrupt:
         print(f'\nTraining interrupted at epoch {epoch}. Saving results...')

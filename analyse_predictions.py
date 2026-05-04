@@ -17,9 +17,7 @@ def load_all():
     levels.sort(key=lambda l: l['energy_mev'])
 
     preds = []
-    for f in sorted(Path(PREDICTIONS_DIR).iterdir()):
-        if f.suffix != '.json':
-            continue
+    for f in sorted(Path(PREDICTIONS_DIR).rglob('*.json')):
         d = json.load(open(f))
         run = d['run_dir'].rstrip('/').split('/')[-1]
         for p in d['predictions']:

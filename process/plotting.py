@@ -23,24 +23,6 @@ def plot_results(path, title, out_path):
     ax_loss.legend()
     ax_loss.grid(True, alpha=0.3)
 
-    # precision
-    # ax_prec = fig.add_subplot(gs[1, 0])
-    # ax_prec.plot(epochs, df["val_precision"], color="tab:orange", label="Precision")
-    # ax_prec.set_ylim(0, 1.05)
-    # ax_prec.set_title("Precision")
-    # ax_prec.set_xlabel("Epoch")
-    # ax_prec.set_ylabel("Precision")
-    # ax_prec.grid(True, alpha=0.3)
-
-    # # recall
-    # ax_rec = fig.add_subplot(gs[1, 1])
-    # ax_rec.plot(epochs, df["val_recall"], color="tab:green", label="Recall")
-    # ax_rec.set_ylim(0, 1.05)
-    # ax_rec.set_title("Recall")
-    # ax_rec.set_xlabel("Epoch")
-    # ax_rec.set_ylabel("Recall")
-    # ax_rec.grid(True, alpha=0.3)
-
     plt.savefig(out_path, dpi=150, bbox_inches="tight")
     print(f"Saved plots to {out_path}.")
 
@@ -75,10 +57,21 @@ def display_tensor_with_targets(tensor, target, name):
 # tensor shape: [n_y, n_channels]
 def display_tensor(tensor, name):
 
+    mask = None
+    if len(tensor.shape) == 3:
+        mask = tensor[1].numpy()
+        tensor = tensor[0]
+
     grid = tensor.numpy()
 
     plt.figure(figsize=(12, 6))
     plt.imshow(grid, cmap='viridis', origin='lower', interpolation='nearest', aspect='auto')
+    
+    if mask is not None:
+        black = np.zeros((*mask.shape, 4))
+        black[..., 3] = 1.0 - mask
+        plt.imshow(black, origin='lower', interpolation='nearest', aspect='auto')
+
     plt.colorbar(label='log10(cross section)')
     plt.xlabel('Channel')
     plt.ylabel('Energy bin')

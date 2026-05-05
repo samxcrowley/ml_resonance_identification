@@ -74,13 +74,13 @@ def main():
         if conf < CONF_THRESHOLD:
             continue
 
-        e_kev = e_min + energy_norm[q].item() * (e_max - e_min)
+        e_mev = e_min + energy_norm[q].item() * (e_max - e_min)
         j_val = j_pred[q].item() / 2.0
         pi_sym = '+' if pi_pred[q].item() == 1 else '-'
         n_ch = jpi_nchannels.get((j_val, pi_sym), max_channels)
 
         results.append({
-            'energy': e_kev,
+            'energy': e_mev,
             'conf': conf,
             'j': j_val,
             'parity': pi_sym,
@@ -90,14 +90,14 @@ def main():
 
     results.sort(key=lambda r: r['energy'])
 
-    print(f'\nEnergy range: {e_min:.3f} – {e_max:.3f} kev  |  '
+    print(f'\nEnergy range: {e_min:.3f} - {e_max:.3f} MeV  |  '
           f'{len(results)} resonance(s) above threshold {CONF_THRESHOLD}')
 
     if not results:
         print('  (none)')
         return
 
-    print(f"  {'Energy (keV)':>14}  {'Conf':>6}  {'Jpi':<6}  {'Total G (keV)':>14}  Partial G (keV)")
+    print(f"  {'Energy (MeV)':>14}  {'Conf':>6}  {'Jpi':<6}  {'Total G (keV)':>14}  Partial G (keV)")
     print(f"  {'-'*14}  {'-'*6}  {'-'*6}  {'-'*14}  {'-'*30}")
 
     for r in results:

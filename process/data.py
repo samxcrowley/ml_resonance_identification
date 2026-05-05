@@ -9,7 +9,7 @@ from process.header import Header
 # set in params.json, default is 20
 MAX_RESONANCES = 20
 
-GAMMA_LOG_MIN = -8.0 # log10(1e-8)
+GAMMA_LOG_MIN = -10.0 # log10(1e-10)
 GAMMA_LOG_MAX = 2.0 # log10(100 MeV)
 
 # process experimental JSON data (no targets)
@@ -187,7 +187,7 @@ def process_json(data, n_y=512, clamp=1e-8):
                 val = level['Gamma'][i]
                 if val is None or np.isnan(val):
                     continue
-                g = np.clip(np.log10(max(val, clamp)), GAMMA_LOG_MIN, GAMMA_LOG_MAX)
+                g = np.clip(np.log10(max(abs(val), clamp)), GAMMA_LOG_MIN, GAMMA_LOG_MAX)
                 gamma_target[n, i] = (g - GAMMA_LOG_MIN) / (GAMMA_LOG_MAX - GAMMA_LOG_MIN)
                 gamma_mask_target[n, i] = 1.0
 

@@ -14,7 +14,7 @@ import process.transforms as transforms
 test_data_path = 'data/preprocessed/nlevel_20_test.pt'
 
 N_BINS = 512
-E_RANGE_MEV = 8.0
+E_RANGE_MEV = 14.821597
 N_RAW_POINTS = 400
 RAW_SPACING_KEV = E_RANGE_MEV / N_RAW_POINTS * 1000
 
@@ -25,7 +25,7 @@ def _floor_to_kev(floor_bins):
 # matched is a list of dicts, one for each prediction and target (gt: ground truth)
 # dict contains pred_conf, err_norm, err_mev, gt_width_mev, gt_width_bins, pred_jpi_correct, e_range
 # unmatched_confs is list of confidences for unmatched queries
-def _collect_records(run_dir, do_crop, width_tolerance):
+def _collect_records(run_dir, do_crop, width_tolerance, data_path=None):
 
     with open(f'{run_dir}/params.json', 'r') as f:
         params = json.load(f)
@@ -47,8 +47,7 @@ def _collect_records(run_dir, do_crop, width_tolerance):
         crop_params = {'crop_energy': 0.75, 'min_angles': 1, 'min_pp_combos': 1, 'inelastic_dropout_p': 0.0}
 
     channel_filter = params.get('channel_filter', None)
-    dataset = data.ResonanceDataset(test_data_path, crop_params, transform,
-                                    channel_filter=channel_filter)
+    dataset = data.ResonanceDataset(data_path, crop_params, transform, channel_filter=channel_filter)
     loader = DataLoader(dataset, batch_size=64, shuffle=False)
 
     loss_fn = DETR_Loss(header, params)
@@ -326,10 +325,11 @@ if __name__ == '__main__':
     parser.add_argument('--confidence-threshold', type=float, default=0.5)
     parser.add_argument('--width-tolerance', type=float, default=0.5)
     parser.add_argument('--floor', type=int, default=3)
+    parser.add_argument('--data-path', default='data/preprocessed/test.pt')
     args = parser.parse_args()
 
-    matched_u, unmatched_u = _collect_records(args.run_dir, False, args.width_tolerance)
-    matched_c, unmatched_c = _collect_records(args.run_dir, True,  args.width_tolerance)
+    matched_u, unmatched_u = _collect_records(args.run_dir, False, args.width_tolerance, args.data_path)
+    matched_c, unmatched_c = _collect_records(args.run_dir, True, args.width_tolerance, args.data_path)
 
     floors = [1, 2, 3, 4, 5]
 

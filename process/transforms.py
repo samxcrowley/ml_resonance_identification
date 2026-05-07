@@ -3,6 +3,9 @@ import torch.nn.functional as F
 import torchvision.transforms
 import process.data as data
 
+FLOOR = -7.9
+FLOOR_FILL = -8.0
+
 def get_augment_transform(noise_sigma_log10=0.1, amplitude_scale=0.2, gaussian_blur_sigma=0.0):
 
     ls = []
@@ -27,10 +30,14 @@ def _crop(
     crop_energy=0.0,
     min_angles=1,
     min_pp_combos=1,
+    max_pp_combos=9,
+    elastic_max_pp_combos=None,
+    contiguous_angle_crop_p=0.0,
+    shared_energy_crop_p=0.0,
     use_info_weight=False,
-    inelastic_dropout_p=0.0):
+    inelastic_dropout_p=0.0,
+    min_kept_prom=0.0):
 
-    FLOOR = -7.9
     VISIBILITY_WINDOW = 5
 
     E, C = tensor.shape
@@ -41,23 +48,44 @@ def _crop(
     energies = target['energy'].squeeze(1)
     n_true = int(target['class'][:, 1].sum().item())
 
-    crop_mask = (tensor > FLOOR).float()
+    natural_mask = (tensor > FLOOR).float()
+    crop_mask = natural_mask.clone()
 
-    # drop all inelastic channels
-    if inelastic_dropout_p > 0.0 and torch.rand(1).item() < inelastic_dropout_p:
-        pp_combos = metadata.get('pp_combos', [])
-        for pp_idx, (pp_in, pp_out) in enumerate(pp_combos):
-            if pp_in != pp_out:
-                crop_mask[:, pp_idx * n_angles:(pp_idx + 1) * n_angles] = 0.0
+    pp_combos = metadata.get('pp_combos')
+    if not pp_combos:
+        n_exits = metadata['n_exits']
+        pp_combos = [(pp // n_exits, pp % n_exits) for pp in range(n_pp)]
 
-    # drop pp_combos
-    if min_pp_combos < n_pp:
-        n_keep = torch.randint(min_pp_combos, n_pp + 1, (1,)).item()
-        kept = torch.randperm(n_pp)[:n_keep]
-        drop = torch.ones(n_pp, dtype=torch.bool)
-        drop[kept] = False
-        for pp in drop.nonzero(as_tuple=True)[0].tolist():
-            crop_mask[:, pp * n_angles:(pp + 1) * n_angles] = 0.0
+    elastic_pps = [pp for pp, (pp_in, pp_out) in enumerate(pp_combos) if pp_in == pp_out]
+    force_elastic_only = (
+        len(elastic_pps) > 0 and
+        inelastic_dropout_p > 0.0 and
+        torch.rand(1).item() < inelastic_dropout_p
+    )
+
+    allowed_pps = elastic_pps if force_elastic_only else list(range(n_pp))
+    pp_upper_limit = max_pp_combos
+    if force_elastic_only and elastic_max_pp_combos is not None:
+        pp_upper_limit = elastic_max_pp_combos
+    pp_upper = min(pp_upper_limit, len(allowed_pps))
+    min_keep = min(min_pp_combos, pp_upper)
+
+    if pp_upper > 0:
+        if min_keep < pp_upper:
+            n_keep = torch.randint(min_keep, pp_upper + 1, (1,)).item()
+        else:
+            n_keep = pp_upper
+        kept_allowed = torch.randperm(len(allowed_pps))[:n_keep].tolist()
+        kept_pps = [allowed_pps[i] for i in kept_allowed]
+    else:
+        kept_pps = []
+
+    pp_keep_mask = torch.zeros(n_pp, dtype=torch.bool)
+    if kept_pps:
+        pp_keep_mask[torch.tensor(kept_pps, dtype=torch.long)] = True
+
+    for pp in (~pp_keep_mask).nonzero(as_tuple=True)[0].tolist():
+        crop_mask[:, pp * n_angles:(pp + 1) * n_angles] = 0.0
 
     # drop angles
     if min_angles < n_angles:
@@ -67,48 +95,104 @@ def _crop(
             if crop_mask[:, col_s:col_e].sum() == 0:
                 continue
             n_keep = torch.randint(min_angles, n_angles + 1, (1,)).item()
-            kept = torch.randperm(n_angles)[:n_keep]
+            use_contiguous = (
+                contiguous_angle_crop_p > 0.0 and
+                torch.rand(1).item() < contiguous_angle_crop_p
+            )
+            if use_contiguous:
+                start = torch.randint(0, n_angles - n_keep + 1, (1,)).item()
+                kept = torch.arange(start, start + n_keep)
+            else:
+                kept = torch.randperm(n_angles)[:n_keep]
             drop = torch.ones(n_angles, dtype=torch.bool)
             drop[kept] = False
             for a in drop.nonzero(as_tuple=True)[0].tolist():
                 crop_mask[:, col_s + a] = 0.0
 
-    # crop energy per column
+    # crop energy per column, vectorised across columns. The shared option
+    # gives all kept channels one contiguous experimental-style energy window.
     if crop_energy > 0.0:
-        for pp in range(n_pp):
-            col_s = pp * n_angles
-            for a in range(n_angles):
-                ch_col = col_s + a
-                active_rows = crop_mask[:, ch_col].nonzero(as_tuple=True)[0]
-                if len(active_rows) == 0:
-                    continue
-                row_lo = active_rows[0].item()
-                row_hi = active_rows[-1].item() + 1
-                active_len = row_hi - row_lo
-                ratio = torch.rand(1).item() * crop_energy
-                keep = max(1, int((1.0 - ratio) * active_len))
-                offset = torch.randint(0, max(1, active_len - keep + 1), (1,)).item()
-                win_lo = row_lo + offset
-                win_hi = win_lo + keep
-                crop_mask[:win_lo, ch_col] = 0.0
-                crop_mask[win_hi:,  ch_col] = 0.0
+        active_cols = crop_mask.sum(dim=0) > 0
+        if active_cols.any():
+            col_mask = crop_mask > 0
+            row_lo = col_mask.float().argmax(dim=0)
+            row_hi = E - col_mask.flip(0).float().argmax(dim=0)
+            active_len = (row_hi - row_lo).clamp(min=1)
 
-    # safety 
+            use_shared_energy = (
+                shared_energy_crop_p > 0.0 and
+                torch.rand(1).item() < shared_energy_crop_p
+            )
+            if use_shared_energy:
+                active_lo = row_lo[active_cols].min()
+                active_hi = row_hi[active_cols].max()
+                shared_len = (active_hi - active_lo).clamp(min=1)
+                ratio = torch.rand((), device=tensor.device) * crop_energy
+                keep = ((1.0 - ratio) * shared_len.float()).long().clamp(min=1)
+                max_offset = (shared_len - keep + 1).clamp(min=1)
+                offset = torch.randint(0, int(max_offset.item()), (), device=tensor.device)
+                win_lo = torch.full((C,), int((active_lo + offset).item()), dtype=torch.long, device=tensor.device)
+                win_hi = torch.full((C,), int((active_lo + offset + keep).item()), dtype=torch.long, device=tensor.device)
+            else:
+                ratios = torch.rand(C, device=tensor.device) * crop_energy
+                keep = ((1.0 - ratios) * active_len.float()).long().clamp(min=1)
+                max_offsets = (active_len - keep + 1).clamp(min=1)
+                offsets = (torch.rand(C, device=tensor.device) * max_offsets.float()).long()
+                win_lo = row_lo + offsets
+                win_hi = win_lo + keep
+
+            rows = torch.arange(E, device=tensor.device).unsqueeze(1)
+            keep_mask = (rows >= win_lo.unsqueeze(0)) & (rows < win_hi.unsqueeze(0))
+            crop_mask = crop_mask * torch.where(active_cols.unsqueeze(0), keep_mask, torch.zeros_like(keep_mask)).float()
+
+    # safety: restore the selected pp-combos if angle/energy crops removed
+    # everything, instead of falling back to all channels.
     if crop_mask.sum() == 0:
-        crop_mask = torch.ones_like(crop_mask)
+        crop_mask = torch.zeros_like(natural_mask)
+        for pp in pp_keep_mask.nonzero(as_tuple=True)[0].tolist():
+            col_s = pp * n_angles
+            crop_mask[:, col_s:col_s + n_angles] = natural_mask[:, col_s:col_s + n_angles]
+        if crop_mask.sum() == 0:
+            crop_mask = natural_mask
 
     # build output tensor [2, E, C]
-    cropped_data = torch.where(crop_mask > 0, tensor, torch.tensor(-8.0))
+    cropped_data = torch.where(crop_mask > 0, tensor, tensor.new_full((), FLOOR_FILL))
     cropped_tensor = torch.stack([cropped_data, crop_mask], dim=0)
 
     # keep resonances with data within VISIBILITY_WINDOW bins of their energy
+    # and kept_prom >= min_kept_prom
+    prom_per_channel = target.get('prominence_per_channel') # [max_res, n_pp * n_angles]
+    prom_per_combo = target.get('prominence_per_combo') # [max_res, n_pp]
+    use_channel_prom_filter = prom_per_channel is not None and min_kept_prom > 0.0
+    use_combo_prom_filter = (
+        not use_channel_prom_filter and
+        prom_per_combo is not None and
+        min_kept_prom > 0.0
+    )
+
     res_mask = torch.zeros(max_resonances, dtype=torch.bool)
     for i in range(n_true):
         e_bin = int(energies[i].item() * E)
         bin_lo = max(0, e_bin - VISIBILITY_WINDOW)
         bin_hi = min(E, e_bin + VISIBILITY_WINDOW)
-        if crop_mask[bin_lo:bin_hi, :].sum() > 0:
-            res_mask[i] = True
+        win = crop_mask[bin_lo:bin_hi, :]
+        if win.sum() == 0:
+            continue
+        if use_channel_prom_filter:
+            channel_present = win.sum(dim=0) > 0
+            if not channel_present.any():
+                continue
+            kept_prom = float(prom_per_channel[i, channel_present].max().item())
+            if kept_prom < min_kept_prom:
+                continue
+        elif use_combo_prom_filter:
+            combo_present = win.view(win.shape[0], n_pp, n_angles).sum(dim=(0, 2)) > 0
+            if not combo_present.any():
+                continue
+            kept_prom = float(prom_per_combo[i, combo_present].max().item())
+            if kept_prom < min_kept_prom:
+                continue
+        res_mask[i] = True
 
     n_kept = res_mask.sum().item()
 
@@ -226,6 +310,7 @@ def _gaussian_blur_1d(tensor, sigma_bins):
 
     blurred = tensor.clone()
     data = tensor[0] # [E, C]
+    mask = tensor[1]
 
     sigma_bins = torch.rand(1).item() * sigma_bins
     if sigma_bins < 0.1:
@@ -236,10 +321,14 @@ def _gaussian_blur_1d(tensor, sigma_bins):
     kernel = torch.exp(-0.5 * (x / sigma_bins) ** 2)
     kernel = kernel / kernel.sum()
 
-    E, C = data.shape
-    data_t = data.T.unsqueeze(1) # [C, 1, E]
+    weighted_data = data * mask
+    data_t = weighted_data.T.unsqueeze(1) # [C, 1, E]
+    mask_t = mask.T.unsqueeze(1) # [C, 1, E]
     kernel_t = kernel.view(1, 1, -1)
-    blurred[0] = F.conv1d(data_t, kernel_t, padding=radius).squeeze(1).T # [E, C]
+    data_sum = F.conv1d(data_t, kernel_t, padding=radius).squeeze(1).T # [E, C]
+    mask_sum = F.conv1d(mask_t, kernel_t, padding=radius).squeeze(1).T # [E, C]
+    blurred_data = data_sum / mask_sum.clamp(min=1e-6)
+    blurred[0] = torch.where(mask > 0, blurred_data, data.new_full((), FLOOR_FILL))
 
     return blurred
 
@@ -248,7 +337,9 @@ def _gaussian_blur_1d(tensor, sigma_bins):
 # reasonable range is 0.05-0.2
 def _add_noise(tensor, noise_sigma_log10):
     noisy = tensor.clone()
-    noisy[0] = tensor[0] + torch.randn_like(tensor[0]) * noise_sigma_log10
+    mask = tensor[1]
+    noisy_data = tensor[0] + torch.randn_like(tensor[0]) * noise_sigma_log10
+    noisy[0] = torch.where(mask > 0, noisy_data, tensor[0].new_full((), FLOOR_FILL))
     return noisy
 
 # random additive offset in log10 space (multiplicative scale in linear)
@@ -256,7 +347,9 @@ def _add_noise(tensor, noise_sigma_log10):
 def _amplitude_scale(tensor, max_scale):
     offset = (torch.rand(1).item() * 2 - 1) * max_scale
     scaled = tensor.clone()
-    scaled[0] = tensor[0] + offset
+    mask = tensor[1]
+    scaled_data = tensor[0] + offset
+    scaled[0] = torch.where(mask > 0, scaled_data, tensor[0].new_full((), FLOOR_FILL))
     return scaled
 
 def _lambda(foo, flag=True):

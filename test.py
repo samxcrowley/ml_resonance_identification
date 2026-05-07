@@ -11,8 +11,6 @@ from model.detr import DETR_Model, DETR_Loss, HungarianMatcher
 from process.header import Header
 import process.transforms as transforms
 
-test_data_path = 'data/preprocessed/nlevel_20_test.pt'
-
 N_BINS = 512
 E_RANGE_MEV = 14.821597
 N_RAW_POINTS = 400
@@ -42,9 +40,28 @@ def _collect_records(run_dir, do_crop, width_tolerance, data_path=None):
     model.to(device)
 
     transform = transforms.get_augment_transform(noise_sigma_log10=0.0, amplitude_scale=0.0)
-    crop_params = {}
+    n_pp = params.get('n_entrances', 3) * params.get('n_exits', 3)
+    crop_params = {
+        'crop_energy': 0.0,
+        'min_angles': params.get('n_angles', 16),
+        'min_pp_combos': n_pp,
+        'max_pp_combos': n_pp,
+        'inelastic_dropout_p': 0.0,
+        'min_kept_prom': params.get('min_kept_prom', 0.0),
+        'use_info_weight': False,
+    }
     if do_crop:
-        crop_params = {'crop_energy': 0.75, 'min_angles': 1, 'min_pp_combos': 1, 'inelastic_dropout_p': 0.0}
+        crop_params = {
+            'crop_energy': params.get('crop_energy', 0.75),
+            'min_angles': params.get('min_angles', 1),
+            'min_pp_combos': params.get('min_pp_combos', 1),
+            'max_pp_combos': params.get('max_pp_combos', 9),
+            'elastic_max_pp_combos': params.get('elastic_max_pp_combos', None),
+            'contiguous_angle_crop_p': params.get('contiguous_angle_crop_p', 0.0),
+            'inelastic_dropout_p': params.get('inelastic_dropout_p', 0.0),
+            'min_kept_prom': params.get('min_kept_prom', 0.0),
+            'use_info_weight': False,
+        }
 
     channel_filter = params.get('channel_filter', None)
     dataset = data.ResonanceDataset(data_path, crop_params, transform, channel_filter=channel_filter)

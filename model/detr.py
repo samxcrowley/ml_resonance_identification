@@ -189,9 +189,6 @@ class DETR_Loss(nn.Module):
                 'gamma_mask': targets['gamma_mask'][n][mask],
             }
 
-            if 'info_weight' in targets:
-                t['info_weight'] = targets['info_weight'][n][mask]
-
             _targets.append(t)
 
         return _targets
@@ -225,38 +222,16 @@ class DETR_Loss(nn.Module):
 
             if len(pred_idx) > 0:
 
-                # per-resonance information weights
-                has_weights = 'info_weight' in targets[n]
-                if has_weights:
-                    weights = targets[n]['info_weight'][target_idx].float().to(device)
-                    w_sum = weights.sum()
-                else:
-                    w_sum = None
-
-                if has_weights and w_sum > 0:
-                    per_e = F.l1_loss(
-                        preds['energy'][n][pred_idx],
-                        targets[n]['energy'][target_idx].float().to(device),
-                        reduction='none'
-                    )
-                    loss_energy += (per_e.squeeze(-1) * weights).sum() / w_sum
-                elif not has_weights:
-                    loss_energy += F.l1_loss(
-                        preds['energy'][n][pred_idx],
-                        targets[n]['energy'][target_idx].float().to(device)
-                    )
+                loss_energy += F.l1_loss(
+                    preds['energy'][n][pred_idx],
+                    targets[n]['energy'][target_idx].float().to(device)
+                )
 
                 target_j = targets[n]['j_index'][target_idx].to(device)
                 target_pi = targets[n]['pi'][target_idx].to(device)
 
-                if has_weights and w_sum > 0:
-                    per_j = F.cross_entropy(preds['j'][n][pred_idx], target_j,  reduction='none')
-                    per_pi = F.cross_entropy(preds['pi'][n][pred_idx], target_pi, reduction='none')
-                    loss_j += (per_j  * weights).sum() / w_sum
-                    loss_pi += (per_pi * weights).sum() / w_sum
-                elif not has_weights:
-                    loss_j += F.cross_entropy(preds['j'][n][pred_idx], target_j)
-                    loss_pi += F.cross_entropy(preds['pi'][n][pred_idx], target_pi)
+                loss_j += F.cross_entropy(preds['j'][n][pred_idx], target_j)
+                loss_pi += F.cross_entropy(preds['pi'][n][pred_idx], target_pi)
 
                 pred_gamma = preds['gamma'][n][pred_idx]
                 target_gamma = targets[n]['gamma'][target_idx].float().to(device)
@@ -271,13 +246,7 @@ class DETR_Loss(nn.Module):
                     gamma_mask[nan_mask] = 0.0
 
                 if gamma_mask.sum() > 0:
-                    if has_weights and w_sum > 0:
-                        per_res_gamma = (F.mse_loss(pred_gamma, target_gamma, reduction='none') * gamma_mask).sum(dim=1)
-                        gamma_count = gamma_mask.sum(dim=1).clamp(min=1)
-                        per_res_gamma = per_res_gamma / gamma_count
-                        loss_gamma += (per_res_gamma * weights).sum() / w_sum
-                    else:
-                        loss_gamma += (F.mse_loss(pred_gamma, target_gamma, reduction='none') * gamma_mask).sum() / gamma_mask.sum()
+                    loss_gamma += (F.mse_loss(pred_gamma, target_gamma, reduction='none') * gamma_mask).sum() / gamma_mask.sum()
             
         loss_class /= N
         loss_energy /= N

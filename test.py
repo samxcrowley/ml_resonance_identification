@@ -48,7 +48,6 @@ def _collect_records(run_dir, do_crop, width_tolerance, data_path=None):
         'max_pp_combos': n_pp,
         'inelastic_dropout_p': 0.0,
         'min_kept_prom': params.get('min_kept_prom', 0.0),
-        'use_info_weight': False,
     }
     if do_crop:
         crop_params = {
@@ -60,7 +59,6 @@ def _collect_records(run_dir, do_crop, width_tolerance, data_path=None):
             'contiguous_angle_crop_p': params.get('contiguous_angle_crop_p', 0.0),
             'inelastic_dropout_p': params.get('inelastic_dropout_p', 0.0),
             'min_kept_prom': params.get('min_kept_prom', 0.0),
-            'use_info_weight': False,
         }
 
     channel_filter = params.get('channel_filter', None)

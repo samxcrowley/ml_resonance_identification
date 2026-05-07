@@ -32,7 +32,6 @@ Per-sample targets:
 - **energy** -- normalised resonance energy in [0, 1]
 - **gamma** -- log-normalised partial widths per channel
 - **jpi_index** -- index into the 12 J^pi sets
-- **info_weight** -- per-resonance weight based on data availability after cropping
 
 ## Data Augmentation
 
@@ -45,10 +44,6 @@ Three independent cropping transforms simulate incomplete experimental data:
 - **Channel cropping** -- drops entire entrance channels (minimum `min_channels` kept)
 
 Cropped regions are zeroed in the data and marked in the mask channel. The mask is downsampled through the backbone and passed as `key_padding_mask` to the transformer, so attention only operates on valid positions.
-
-### Information weighting
-
-Per-resonance loss weights are computed based on how much data remains visible near each resonance after cropping, accounting for partial width branching across particle pairs.
 
 ### Other augmentations
 
@@ -109,7 +104,7 @@ model/
 
 process/
   data.py              -- dataset class, preprocessing
-  transforms.py        -- cropping, augmentation, info weighting
+  transforms.py        -- cropping and augmentation
   header.py            -- nuclear data header (J^pi sets, channels)
   preprocess.py        -- raw data files to .pt conversion
 

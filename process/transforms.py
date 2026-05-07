@@ -34,7 +34,6 @@ def _crop(
     elastic_max_pp_combos=None,
     contiguous_angle_crop_p=0.0,
     shared_energy_crop_p=0.0,
-    use_info_weight=False,
     inelastic_dropout_p=0.0,
     min_kept_prom=0.0):
 
@@ -207,102 +206,7 @@ def _crop(
     cropped_target['e_min'] = target['e_min']
     cropped_target['e_max'] = target['e_max']
 
-    if use_info_weight:
-        info_weight = _get_info_weights(cropped_target, n_kept, cropped_tensor[1], metadata)
-        cropped_target['info_weight'] = info_weight
-
     return cropped_tensor, cropped_target
-
-# information weight per resonance
-# W = sum_c[N_c * G_c] / NG
-# N = total non-masked data points within G of energy level
-# N_c = non-masked data points in c within G of energy level
-# G = total width
-# G_c = partial width in c
-def _get_info_weights(target, n_kept, crop_mask, metadata):
-
-    max_resonances = target['energy'].shape[0]
-    info_weight = torch.zeros(max_resonances, dtype=torch.float32)
-
-    if n_kept == 0:
-        return info_weight
-
-    E, C = crop_mask.shape
-    e_min = target['e_min'].item()
-    e_max = target['e_max'].item()
-    e_range = e_max - e_min
-
-    n_entrances = metadata['n_entrances']
-    n_exits = metadata['n_exits']
-    n_angles = metadata['n_angles']
-    channel_pp_map = metadata['channel_pp_map']
-
-    # precompute per-pp column sums for each energy bin row
-    # pp_col_sums[pp, e] = sum of crop_mask[e, cols_involving_pp]
-    n_particle_pairs = max(n_entrances, n_exits)
-    pp_col_sums = torch.zeros(n_particle_pairs, E, dtype=torch.float32)
-    for ent in range(n_entrances):
-        for ext in range(n_exits):
-            pp_combo_idx = ent * n_exits + ext
-            col_start = pp_combo_idx * n_angles
-            col_end = col_start + n_angles
-            col_sum = crop_mask[:, col_start:col_end].sum(dim=1)
-            pp_col_sums[ent] += col_sum
-            pp_col_sums[ext] += col_sum
-
-    # total non-masked points per energy bin row
-    row_sums = crop_mask.sum(dim=1)
-
-    for i in range(n_kept):
-
-        e_norm = target['energy'][i].item()
-        jpi_idx = int(target['jpi_index'][i].item())
-        gammas_norm = target['gamma'][i]
-        g_mask = target['gamma_mask'][i]
-
-        # un-normalise gammas
-        gamma_log = gammas_norm * (data.GAMMA_LOG_MAX - data.GAMMA_LOG_MIN) + data.GAMMA_LOG_MIN
-        gamma_linear = (10.0 ** gamma_log) * g_mask
-
-        G = gamma_linear.sum().item()
-        if G <= 0:
-            continue
-
-        # energy window: E +- G in bin space
-        G_norm = G / e_range
-        e_bin = e_norm * E
-        G_bins = G_norm * E
-        bin_lo = max(0, int(e_bin - G_bins))
-        bin_hi = min(E, int(e_bin + G_bins) + 1)
-
-        if bin_lo >= bin_hi:
-            continue
-
-        N = row_sums[bin_lo:bin_hi].sum().item()
-
-        if N == 0:
-            continue
-
-        # group partial widths by particle pair
-        pp_indices = channel_pp_map[jpi_idx]
-        pp_gammas = {}
-        for ch_idx in range(len(pp_indices)):
-            pp = pp_indices[ch_idx].item()
-            if pp < 0:
-                break
-            if g_mask[ch_idx].item() == 0:
-                continue
-            pp_gammas[pp] = pp_gammas.get(pp, 0.0) + gamma_linear[ch_idx].item()
-
-        # weight = (sum_c N_c * G_c) / (N * G)
-        numerator = 0.0
-        for pp, Gc in pp_gammas.items():
-            Nc = pp_col_sums[pp, bin_lo:bin_hi].sum().item()
-            numerator += Nc * Gc
-
-        info_weight[i] = numerator / (N * G)
-
-    return info_weight
 
 # Gaussian blur along the energy axis per channel (log space)
 # sigma_bins: std dev in energy bins, reasonable range is 0.5-3.0

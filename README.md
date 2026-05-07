@@ -112,7 +112,7 @@ A params file is a flat JSON object. Its structure is roughly:
 
   "n_epochs": 600,
   "batch_size": 256,
-  "lr": 1-e3,
+  "lr": 1e-3,
   "weight_decay": 1e-4,
   "scheduler": "cosine",
   "warmup_epochs": 10,

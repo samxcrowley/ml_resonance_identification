@@ -18,6 +18,12 @@ SHOW_PREDICTIONS = True
 SHOW_KNOWN_ENERGY_LINES = False
 EPOCH_MIN = 450
 EPOCH_MAX = 600
+DPI = 130
+FIGSIZE = (15, 7.15)
+PLOT_LEFT = 0.07
+PLOT_RIGHT = 0.70
+PLOT_BOTTOM = 0.10
+PLOT_TOP = 0.92
 LEGEND_FONTSIZE = 16
 LEGEND_TITLE_FONTSIZE = 18
 LEGEND_MARKERSIZE = 18
@@ -29,6 +35,7 @@ MODEL_RUNS = {
     ],
     'B': [
         'B1_seed37',
+        'B2_seed33',
     ],
 }
 
@@ -62,19 +69,29 @@ def _ramp_color(colors, n, i):
     pos = round((n - 1 - i) * (len(colors) - 1) / (n - 1))
     return colors[pos]
 
-def _all_run_labels(model_labels=None):
+def _all_run_labels(model_labels=None, run_labels=None):
     labels = []
     for model_label, ramps in MODEL_COLOR_RAMPS.items():
         if model_labels is not None and model_label not in model_labels:
             continue
         for run_idx in range(len(ramps)):
-            labels.append(f'{model_label}{run_idx + 1}')
+            label = f'{model_label}{run_idx + 1}'
+            if run_labels is not None and label not in run_labels:
+                continue
+            labels.append(label)
     return labels
 
 def _jpi_label(j, pi):
     j = float(j)
     j_text = f'{int(j)}' if j.is_integer() else f'{j:g}'
     return f'{j_text}{pi}'
+
+def _jpi_sort_key(jp):
+    return (jp[0], 0 if jp[1] == '+' else 1)
+
+def _jpi_reference(preds, levels):
+    all_jpis = {(p['j'], p['parity']) for p in preds} | {(l['j'], l['parity']) for l in levels}
+    return sorted(all_jpis, key=_jpi_sort_key)
 
 def _active_energy_range(exp_sample_path):
     saved = torch.load(exp_sample_path, weights_only=False)
@@ -98,7 +115,8 @@ def _active_energy_range(exp_sample_path):
 
 def load_all(predictions_dir=PREDICTIONS_DIR, exp_sample_path=EXP_SAMPLE_PATH,
              include_best=False, best_only=False, model_labels=None,
-             epoch_min=EPOCH_MIN, epoch_max=EPOCH_MAX, epoch_only=None):
+             run_labels=None, epoch_min=EPOCH_MIN, epoch_max=EPOCH_MAX,
+             epoch_only=None):
     e_min_plot, e_max_plot = _active_energy_range(exp_sample_path)
 
     levels = [l for l in json.load(open(KNOWN_LEVELS_PATH))
@@ -134,6 +152,9 @@ def load_all(predictions_dir=PREDICTIONS_DIR, exp_sample_path=EXP_SAMPLE_PATH,
                 continue
 
         label = f'{model_label}{run_idx + 1}'
+        if run_labels is not None and label not in run_labels:
+            continue
+
         run_key = f'{run}|{checkpoint}'
         for p in d['predictions']:
             if e_min_plot <= p['energy'] <= e_max_plot:
@@ -149,11 +170,13 @@ def load_all(predictions_dir=PREDICTIONS_DIR, exp_sample_path=EXP_SAMPLE_PATH,
     return levels, preds, (e_min_plot, e_max_plot)
 
 def make_cluster_plot(preds, levels, energy_range, plot_path=PLOT_PATH,
-                      title_extra=None, model_labels=None, epoch_title=None):
+                      title_extra=None, model_labels=None, run_labels=None,
+                      epoch_title=None, jpi_sorted=None,
+                      show_predictions=SHOW_PREDICTIONS):
     e_min_plot, e_max_plot = energy_range
 
-    all_jpis = {(p['j'], p['parity']) for p in preds} | {(l['j'], l['parity']) for l in levels}
-    jpi_sorted = sorted(all_jpis, key=lambda jp: (jp[0], 0 if jp[1] == '+' else 1))
+    if jpi_sorted is None:
+        jpi_sorted = _jpi_reference(preds, levels)
     jpi_to_y = {jp: i for i, jp in enumerate(jpi_sorted)}
     jpi_labels = [_jpi_label(j, pi) for j, pi in jpi_sorted]
 
@@ -164,7 +187,7 @@ def make_cluster_plot(preds, levels, energy_range, plot_path=PLOT_PATH,
             next(p['run_idx'] for p in preds if p['run_label'] == label),
         ),
     )
-    legend_labels = _all_run_labels(model_labels)
+    legend_labels = _all_run_labels(model_labels, run_labels)
 
     run_colors = {}
     legend_colors = {}
@@ -186,14 +209,14 @@ def make_cluster_plot(preds, levels, energy_range, plot_path=PLOT_PATH,
             run_y_offsets[(label, epoch)] = (i % 7 - 3) * 0.04
         legend_colors[label] = _ramp_color(colors, len(epochs), len(epochs) // 2)
 
-    fig, ax = plt.subplots(figsize=(15, max(6.5, 0.65 * len(jpi_sorted) + 3.0)))
+    fig, ax = plt.subplots(figsize=FIGSIZE)
 
     if SHOW_KNOWN_ENERGY_LINES:
         for lvl in levels:
             ax.axvline(lvl['energy_mev'], color='#012a4a', linestyle=':',
                        linewidth=1.1, alpha=0.52, zorder=1)
 
-    if SHOW_PREDICTIONS:
+    if show_predictions:
         for label_idx, label in enumerate(plot_labels):
             rps = [p for p in preds if p['run_label'] == label]
             xs = [p['energy'] for p in rps]
@@ -219,7 +242,7 @@ def make_cluster_plot(preds, levels, energy_range, plot_path=PLOT_PATH,
     ax.set_ylabel(r'$J^\pi$')
     ax.grid(False)
 
-    if SHOW_PREDICTIONS:
+    if show_predictions:
         title = f'Predictions vs known O16 levels ({e_min_plot:.3f}-{e_max_plot:.3f} MeV)'
         if title_extra:
             title += f' - {title_extra}'
@@ -241,8 +264,8 @@ def make_cluster_plot(preds, levels, energy_range, plot_path=PLOT_PATH,
     else:
         ax.set_title(f'Known O16 levels ({e_min_plot:.3f}-{e_max_plot:.3f} MeV)')
 
-    fig.subplots_adjust(right=0.76)
-    plt.savefig(plot_path, dpi=130, bbox_inches='tight')
+    fig.subplots_adjust(left=PLOT_LEFT, right=PLOT_RIGHT, bottom=PLOT_BOTTOM, top=PLOT_TOP)
+    plt.savefig(plot_path, dpi=DPI)
     plt.close(fig)
 
 def make_plot_bundle(predictions_dir, plot_dir, exp_sample_path):
@@ -276,7 +299,44 @@ def make_plot_bundle(predictions_dir, plot_dir, exp_sample_path):
             'epoch_only': EPOCH_MAX,
             'epoch_title': f'Epoch {EPOCH_MAX}',
         },
+        {
+            'plot_path': f'{plot_dir}/cluster_plot_known_only.png',
+            'show_predictions': False,
+        },
+        {
+            'plot_path': f'{plot_dir}/cluster_plot_A1_B1.png',
+            'title_extra': f'A1 and B1, epochs {EPOCH_MIN}-{EPOCH_MAX}',
+            'run_labels': ['A1', 'B1'],
+            'epoch_title': f'Epoch {EPOCH_MIN}-{EPOCH_MAX}: light to dark',
+        },
+        {
+            'plot_path': f'{plot_dir}/cluster_plot_A2_B2.png',
+            'title_extra': f'A2 and B2, epochs {EPOCH_MIN}-{EPOCH_MAX}',
+            'run_labels': ['A2', 'B2'],
+            'epoch_title': f'Epoch {EPOCH_MIN}-{EPOCH_MAX}: light to dark',
+        },
+        {
+            'plot_path': f'{plot_dir}/cluster_plot_A1_B2.png',
+            'title_extra': f'A1 and B2, epochs {EPOCH_MIN}-{EPOCH_MAX}',
+            'run_labels': ['A1', 'B2'],
+            'epoch_title': f'Epoch {EPOCH_MIN}-{EPOCH_MAX}: light to dark',
+        },
+        {
+            'plot_path': f'{plot_dir}/cluster_plot_A2_B1.png',
+            'title_extra': f'A2 and B1, epochs {EPOCH_MIN}-{EPOCH_MAX}',
+            'run_labels': ['A2', 'B1'],
+            'epoch_title': f'Epoch {EPOCH_MIN}-{EPOCH_MAX}: light to dark',
+        },
     ]
+
+    ref_levels, ref_preds, ref_energy_range = load_all(
+        predictions_dir=predictions_dir,
+        exp_sample_path=exp_sample_path,
+        include_best=True,
+        epoch_min=-1,
+        epoch_max=999999,
+    )
+    jpi_sorted = _jpi_reference(ref_preds, ref_levels)
 
     for job in plot_jobs:
         levels, preds, energy_range = load_all(
@@ -284,6 +344,7 @@ def make_plot_bundle(predictions_dir, plot_dir, exp_sample_path):
             exp_sample_path=exp_sample_path,
             best_only=job.get('best_only', False),
             model_labels=job.get('model_labels'),
+            run_labels=job.get('run_labels'),
             epoch_only=job.get('epoch_only'),
         )
         make_cluster_plot(
@@ -291,7 +352,10 @@ def make_plot_bundle(predictions_dir, plot_dir, exp_sample_path):
             plot_path=job['plot_path'],
             title_extra=job.get('title_extra'),
             model_labels=job.get('model_labels'),
+            run_labels=job.get('run_labels'),
             epoch_title=job.get('epoch_title'),
+            jpi_sorted=jpi_sorted,
+            show_predictions=job.get('show_predictions', SHOW_PREDICTIONS),
         )
         print(f'Wrote {job["plot_path"]}')
 

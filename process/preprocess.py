@@ -146,20 +146,19 @@ def preprocess(pattern):
 
     n_files = len(files)
 
-    print(f'\nFound {n_files} files. Processing with {workers} worker(s).\n')
+    print(f'\nFound {n_files} files. Processing with {N_WORKERS} worker(s).\n')
 
     tmp_results = []
-    worker_fn = partial(_process_file, with_prominence=with_prominence)
 
     with Pool(processes=N_WORKERS, maxtasksperchild=1) as pool:
 
         for name, tmp_path, n_samples, total_time in tqdm(
-            pool.imap(worker_fn, files),
+            pool.imap(_process_file, files),
             total=n_files,
             desc='Processing',
             unit='file'
         ):
-            msg = f'{name}: time={total_time:.1f}s',
+            msg = f'{name}: time={total_time:.1f}s'
             msg += f', samples={n_samples}'
             tqdm.write(msg)
             tmp_results.append((tmp_path, n_samples))

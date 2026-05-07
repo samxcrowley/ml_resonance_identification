@@ -101,7 +101,7 @@ A params file is a flat JSON object. Its structure is roughly:
 {
   "model": "detr",
   "run_name": "...",
-  "seed": 0,
+  "seed": 22,
 
   "data_path": "...",
   "header": "...",
@@ -112,8 +112,8 @@ A params file is a flat JSON object. Its structure is roughly:
 
   "n_epochs": 600,
   "batch_size": 256,
-  "lr": 0.001,
-  "weight_decay": 0.0001,
+  "lr": 1-e3,
+  "weight_decay": 1e-4,
   "scheduler": "cosine",
   "warmup_epochs": 10,
   "eval_every_n": 10,

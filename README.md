@@ -1,114 +1,206 @@
-# Nuclear Scattering Resonance Identification with DETR
+# DETR Nuclear Scattering Resonance Identification
 
-*Note this project is still in-progress, expected to finish in June 2026.*
+This repository trains and applies a DETR-style model for identifying nuclear
+resonances in scattering cross-section data.
 
-A [DETR (DEtection TRansformer)](https://arxiv.org/pdf/2005.12872) model for identifying nuclear resonances from scattering cross-section data. The model takes differential cross-section spectra as input and predicts resonance properties: energy, partial widths (gamma), and quantum numbers (J^pi).
+The model operates on log-scaled differential cross-section tensors with a
+mask channel for missing or cropped regions. It predicts resonance
+properties such as energy, widths, and spin-parity assignments.
 
-Currently targeting the O-16 compound nucleus with 3 particle pairs and 12 J^pi sets.
+## Setup
 
-## Architecture
+Create a virtual environment and install the project requirements:
 
-The model follows the DETR detection pipeline:
+```bash
+python -m venv venv
+venv/bin/pip install -r requirements.txt
+```
 
-1. **2D CNN backbone** -- extracts features from the `[2, 512, n_channels]` input (data + crop mask), producing spatial tokens and a downsampled attention mask
-2. **Transformer encoder** (6 layers) -- self-attention over spatial tokens with key padding mask to ignore cropped regions
-3. **Transformer decoder** (6 layers) -- learned query embeddings cross-attend to encoder output
-4. **Prediction heads** -- per-query MLPs for classification, energy, J^pi index, and partial widths
+## Workflow
 
-Bipartite matching (Hungarian algorithm) assigns predictions to targets, and the loss combines focal loss (classification), L1 (energy), cross-entropy (J^pi), and masked MSE (gamma).
+The project is organized around three main stages: data processing, training,
+and evaluation. Prediction and plotting scripts then apply trained models to
+experimental-style inputs and summarize their outputs.
 
-## Data
+## Data Processing
 
-### Input
+The data-processing module converts raw resonance samples into tensors that can
+be consumed by the model. It handles loading, channel metadata, tensor shaping,
+cropping, masking, and augmentation.
 
-Each sample is a `[512, n_channels]` tensor of log10 differential cross-sections on a uniform energy grid. Channels are organised as `n_pp_combos * n_angles` (e.g. 9 x 16 = 144 for O-16).
+Before cropping, each sample is stored as a log-scaled cross-section tensor with
+shape `[E, C]`, where:
 
-Raw data comes as `.gz` or `.jsonl.gz` files and is preprocessed into `.pt` files via `process/preprocess.py`.
+- `E` is the number of energy grid points.
+- `C` is the number of observable channels.
+- `C = n_pp_combos * n_angles`, with one block of angle bins per particle-pair
+  combination.
 
-### Targets
+After cropping, each model input has shape `[2, E, C]`:
 
-Per-sample targets:
-- **class** -- binary (resonance / no resonance) per query slot
-- **energy** -- normalised resonance energy in [0, 1]
-- **gamma** -- log-normalised partial widths per channel
-- **jpi_index** -- index into the 12 J^pi sets
+- Channel `0` is the log-scaled cross-section data.
+- Channel `1` is the visibility mask, where valid tensor regions are marked as
+  visible, and cropped or missing regions are masked out.
 
-## Data Augmentation
+During training, these are batched as `[N, 2, E, C]`.
+
+Targets are padded to a fixed maximum number of resonances per sample:
+
+- `class`: `[R, 2]`, no-resonance/resonance labels.
+- `energy`: `[R, 1]`, normalized resonance energy.
+- `gamma`: `[R, G]`, normalized partial widths.
+- `gamma_mask`: `[R, G]`, valid-width mask.
+- `jpi_index`: `[R, 1]`, spin-parity assignment index.
+
+Here `R` is `max_resonances`, usually 20, and `G` is the maximum number of gamma channels
+defined by the nuclear header.
 
 ### Cropping
 
-Three independent cropping transforms simulate incomplete experimental data:
+Cropping simulates incomplete experimental coverage by removing regions from the
+input tensor and updating the visibility mask. The different cropping parameters
+are used to sample a range of experimental-like scenarios, as model learning
+is very sensitive to the exact pattern of available channels, angles, and energy
+coverage. The main crop parameters are:
 
-- **Energy cropping** -- randomly removes up to `crop_energy` fraction of the energy range from either end
-- **Angle cropping** -- drops random angle bins across all channels (minimum `min_angles` kept)
-- **Channel cropping** -- drops entire entrance channels (minimum `min_channels` kept)
+- `crop_energy`: maximum fraction of the energy axis that may be removed from a
+  kept channel.
+- `min_angles`: minimum number of angle bins to keep for each kept particle-pair
+  combination.
+- `min_pp_combos`: minimum number of particle-pair combinations to keep.
+- `max_pp_combos`: maximum number of particle-pair combinations to keep.
+- `elastic_max_pp_combos`: optional stricter maximum when an elastic-only crop is
+  sampled.
+- `contiguous_angle_crop_p`: probability that kept angles are one contiguous
+  angular window instead of a random subset.
+- `shared_energy_crop_p`: probability that kept channels share one energy window
+  instead of being cropped independently.
+- `inelastic_dropout_p`: probability of keeping only elastic particle-pair
+  combinations.
+- `min_kept_prom`: minimum resonance prominence required for a resonance to
+  remain a target after cropping.
 
-Cropped regions are zeroed in the data and marked in the mask channel. The mask is downsampled through the backbone and passed as `key_padding_mask` to the transformer, so attention only operates on valid positions.
+Additional augmentations can add log-space noise, amplitude scaling, or blur to
+the visible regions.
 
-### Other augmentations
+## Training
 
-- **Gaussian noise** in log10 space (`noise_sigma_log10`)
-- **Amplitude scaling** -- random additive offset in log10 space (`amplitude_scale`)
+Training is configuration-driven. A params file specifies the model settings,
+data paths, optimizer settings, checkpoint behaviour, and run metadata.
 
-## Curriculum Learning
+Training writes run outputs under `out/runs/`, including the resolved
+configuration, checkpoints, training metrics, and diagnostic plots.
 
-When `curriculum_epochs > 0`, crop severity ramps linearly from zero to full over that many epochs:
+The training module coordinates dataset loading, model construction,
+optimization, checkpointing, and metric logging. The model module contains the
+DETR architecture, prediction heads, matching logic, and loss computation.
 
-- `crop_energy`: 0 -> max
-- `min_angles`: n_angles (16) -> final min (default is 3)
-- `min_channels`: n_entrances (3) -> final min (default is 1)
+A params file is a flat JSON object. Its structure is roughly:
 
-This lets the model learn the base task first, then gradually adapt to missing data. Validation always uses uncropped data for a stable comparison metric.
+```jsonc
+{
+  "model": "detr",
+  "run_name": "...",
+  "seed": 0,
 
-## Usage
+  "data_path": "...",
+  "header": "...",
+  "max_resonances": 20,
+  "n_entrances": 3,
+  "n_exits": 3,
+  "n_angles": 16,
 
-### Training
+  "n_epochs": 600,
+  "batch_size": 256,
+  "lr": 0.001,
+  "weight_decay": 0.0001,
+  "scheduler": "cosine",
+  "warmup_epochs": 10,
+  "eval_every_n": 10,
+  "best_after_epoch": 120,
+  "early_stop_patience": 80,
+  "snapshot_every": 25,
 
-```bash
-python main.py params/<params_name>.json
+  "d_transformer": 256,
+  "n_queries": 25,
+  "n_hidden": 512,
+  "n_head": 8,
+  "n_layers": 6,
+  "dropout_p": 0.1,
+  "norm": "batch",
+
+  "cost_class": 2.5,
+  "cost_energy": 2.5,
+  "cost_gamma": 4.0,
+  "cost_j": 0.5,
+  "cost_pi": 0.5,
+  "class_weights": [0.5, 1.0],
+
+  "crop_energy": 0.5,
+  "min_angles": 8,
+  "min_pp_combos": 1,
+  "max_pp_combos": 9,
+  "elastic_max_pp_combos": 1,
+  "contiguous_angle_crop_p": 0.5,
+  "shared_energy_crop_p": 0.5,
+  "inelastic_dropout_p": 0.33,
+  "min_kept_prom": 0.25,
+  "curriculum_epochs": 120,
+
+  "noise_sigma_log10": 0.2,
+  "amplitude_scale": 0.3,
+  "gaussian_blur_sigma": 0.5,
+
+  "num_workers": 8,
+  "compile": true,
+  "grad_clip_norm": 1.0
+}
 ```
 
-Configuration is set in the JSON params file. See `params/detr.json` for the base template.
+The most important groups are:
 
-### Evaluation
+- Dataset fields define the processed tensor source, nuclear header, target
+  padding, and channel geometry.
+- Optimizer fields control run length, batch size, learning rate, weight decay,
+  warmup, and scheduling.
+- Evaluation and checkpoint fields control validation frequency, when best-model
+  selection starts, early stopping, and snapshot checkpoint cadence.
+- Model fields control the DETR hidden size, number of learned prediction
+  queries, transformer depth, attention heads, dropout, and normalization.
+- Loss fields weight the matching and training losses for class, energy, gamma,
+  spin, and parity predictions.
+- Cropping and augmentation fields control how much data is hidden during
+  training and how noisy or blurred the visible regions can become.
+- `curriculum_epochs` ramps crop severity from easy to full-strength over the
+  early part of training.
 
-```bash
-python test.py out/runs/<run_id> [--crop] [--confidence-threshold FLOAT] [--width-tolerance FLOAT]
-```
+## Evaluation
 
-- `run_dir` -- path to a training run directory (required)
-- `--crop` -- evaluate with cropping augmentations enabled
-- `--confidence-threshold` -- minimum confidence for a prediction to count (default: 0.5)
-- `--width-tolerance` -- relative tolerance for width matching (default: 0.1)
+Evaluation measures a trained run against processed synthetic test data. It
+loads a run checkpoint, compares predicted resonances with target resonances,
+and writes analysis metrics and plots back into the run directory.
 
-### Output
+The model produces `n_queries` prediction slots per sample. Each slot predicts
+whether a resonance is present, its normalized energy, partial widths, and
+spin-parity information.
 
-Results are saved in `out/runs/<timestamp>_<model>_<run_name>/`:
-- `params.json` -- training configuration
-- `checkpoint.pt` -- best model weights (by validation loss)
-- `train_results.csv` -- per-epoch loss breakdown
-- `train_results.png` -- loss curves
+Per sample, the main prediction tensors are:
 
-## Project Structure
+- `class`: `[Q, 2]`, no-resonance/resonance logits.
+- `energy`: `[Q, 1]`, normalized resonance energy.
+- `gamma`: `[Q, G]`, normalized partial widths.
+- `j`: `[Q, J]`, spin logits.
+- `pi`: `[Q, 2]`, parity logits.
 
-```
-model/
-  detr.py              -- DETR model, loss function, Hungarian matcher
-  transformer_encoder.py
-  transformer_decoder.py
-  layer/
-    backbone.py         -- 2D CNN backbone with mask downsampling
-    encoder_layer.py    -- self-attention + FFN
-    decoder_layer.py    -- self-attention + cross-attention + FFN
-    positional_encoding.py
+Here `Q` is `n_queries`, `G` is the maximum number of gamma channels, and `J`
+is the number of spin classes implied by `max_j`.
 
-process/
-  data.py              -- dataset class, preprocessing
-  transforms.py        -- cropping and augmentation
-  header.py            -- nuclear data header (J^pi sets, channels)
-  preprocess.py        -- raw data files to .pt conversion
+The most relevant evaluation controls are the confidence threshold for accepted
+predictions and matching tolerances for deciding whether a predicted resonance
+matches a target.
 
-train.py               -- training loop with curriculum scheduling
-test.py                -- evaluation metrics and visualisation
-main.py                -- CLI entry point
-```
+## Prediction And Analysis
+
+Prediction scripts apply trained checkpoints to experimental-style tensors and
+write structured prediction outputs. Analysis scripts then aggregate those
+outputs into comparison plots across runs, checkpoints, or model variants.

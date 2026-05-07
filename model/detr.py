@@ -111,9 +111,8 @@ class DETR_Model(nn.Module):
 
         enc = self.encoder(features, pos_enc, key_padding_mask=key_padding_mask)
 
-        query_pos = self.query_embedding.weight.unsqueeze(0).repeat(N, 1, 1)
-
-        x = torch.zeros_like(query_pos)
+        query_pos = self.query_embedding.weight.unsqueeze(0).expand(N, -1, -1)
+        x = features.new_zeros((N, self.n_queries, self.d_transformer))
 
         out, _ = self.decoder(x, enc, pos_enc, query_pos, memory_key_padding_mask=key_padding_mask)
 

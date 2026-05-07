@@ -1,28 +1,31 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
 
 def plot_results(path, title, out_path):
 
     df = pd.read_csv(path)
 
-    epochs = df["epoch"]
+    fig, ax = plt.subplots(figsize=(9, 5))
+    ax.plot(df["epoch"], df["train_total_loss"], label="Training", linewidth=1.8)
 
-    fig = plt.figure(figsize=(11, 9))
-    fig.suptitle(title, fontsize=14, fontweight="bold", y=0.98)
-    gs = gridspec.GridSpec(2, 2, figure=fig, hspace=0.35, wspace=0.3, top=0.91)
+    val_df = df.dropna(subset=["val_total_loss"])
+    if len(val_df) > 0:
+        ax.plot(
+            val_df["epoch"],
+            val_df["val_total_loss"],
+            label="Validation",
+            linewidth=1.8,
+            marker="o",
+            markersize=3,
+        )
 
-    # loss
-    ax_loss = fig.add_subplot(gs[0, 0])
-    ax_loss.plot(epochs, df["train_total_loss"], label="Training")
-    ax_loss.plot(epochs, df["val_total_loss"], label="Validation")
-    ax_loss.set_title("Total Loss")
-    ax_loss.set_xlabel("Epoch")
-    ax_loss.set_ylabel("Loss")
-    ax_loss.legend()
-    ax_loss.grid(True, alpha=0.3)
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Loss")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
 
+    plt.tight_layout()
     plt.savefig(out_path, dpi=150, bbox_inches="tight")
     print(f"Saved plots to {out_path}.")
 

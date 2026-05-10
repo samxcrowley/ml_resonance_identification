@@ -10,6 +10,8 @@ import torch
 from tqdm import tqdm
 import process.data as data
 
+# allows this script to be run directly
+# with `python preprocess.py`
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)

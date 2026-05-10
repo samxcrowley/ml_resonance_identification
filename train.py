@@ -207,27 +207,15 @@ def train(params):
         print(f'Resumed from {resume_from}\n')
 
     warmup_epochs = params.get('warmup_epochs', 5)
-    scheduler_type = params.get('scheduler', 'cosine')
 
-    if scheduler_type == 'cosine':
-        def lr_lambda(epoch):
-            if epoch < warmup_epochs:
-                return (epoch + 1) / warmup_epochs
-            progress = (epoch - warmup_epochs) / max(1, n_epochs - warmup_epochs)
-            return 0.5 * (1.0 + np.cos(np.pi * progress))
-        scheduler = torch.optim.lr_scheduler.LambdaLR(optimiser, lr_lambda)
-    elif scheduler_type == 'step':
-        lr_drop_epoch = params.get('lr_drop_epoch', 400)
-        lr_drop_factor = params.get('lr_drop_factor', 0.1)
-        def lr_lambda(epoch):
-            if epoch < warmup_epochs:
-                return (epoch + 1) / warmup_epochs
-            if epoch >= lr_drop_epoch:
-                return lr_drop_factor
-            return 1.0
-        scheduler = torch.optim.lr_scheduler.LambdaLR(optimiser, lr_lambda)
-    else:
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimiser, mode='min', factor=0.5, patience=5)
+    # cosine scheduler
+    def cosine_scheduler_lambda(epoch):
+        if epoch < warmup_epochs:
+            return (epoch + 1) / warmup_epochs
+        progress = (epoch - warmup_epochs) / max(1, n_epochs - warmup_epochs)
+        return 0.5 * (1.0 + np.cos(np.pi * progress))
+
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimiser, cosine_scheduler_lambda)
 
     results = {
         'epoch': []

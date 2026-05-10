@@ -35,7 +35,7 @@ def _crop(
     contiguous_angle_crop_p=0.0,
     shared_energy_crop_p=0.0,
     inelastic_dropout_p=0.0,
-    min_kept_prom=0.0):
+    min_kept_channel_weight=0.0):
 
     VISIBILITY_WINDOW = 5
 
@@ -145,7 +145,7 @@ def _crop(
             crop_mask = crop_mask * torch.where(active_cols.unsqueeze(0), keep_mask, torch.zeros_like(keep_mask)).float()
 
     # safety: restore the selected pp-combos if angle/energy crops removed
-    # everything, instead of falling back to all channels.
+    # everything, instead of falling back to all channels
     if crop_mask.sum() == 0:
         crop_mask = torch.zeros_like(natural_mask)
         for pp in pp_keep_mask.nonzero(as_tuple=True)[0].tolist():
@@ -159,14 +159,14 @@ def _crop(
     cropped_tensor = torch.stack([cropped_data, crop_mask], dim=0)
 
     # keep resonances with data within VISIBILITY_WINDOW bins of their energy
-    # and kept_prom >= min_kept_prom
-    prom_per_channel = target.get('prominence_per_channel') # [max_res, n_pp * n_angles]
-    prom_per_combo = target.get('prominence_per_combo') # [max_res, n_pp]
-    use_channel_prom_filter = prom_per_channel is not None and min_kept_prom > 0.0
-    use_combo_prom_filter = (
-        not use_channel_prom_filter and
-        prom_per_combo is not None and
-        min_kept_prom > 0.0
+    # and kept_weight >= min_kept_channel_weight
+    weight_per_channel = target.get('weight_per_channel') # [max_res, n_pp * n_angles]
+    weight_per_combo = target.get('weight_per_combo') # [max_res, n_pp]
+    use_channel_weight_filter = weight_per_channel is not None and min_kept_channel_weight > 0.0
+    use_combo_weight_filter = (
+        not use_channel_weight_filter and
+        weight_per_combo is not None and
+        min_kept_channel_weight > 0.0
     )
 
     res_mask = torch.zeros(max_resonances, dtype=torch.bool)
@@ -177,19 +177,19 @@ def _crop(
         win = crop_mask[bin_lo:bin_hi, :]
         if win.sum() == 0:
             continue
-        if use_channel_prom_filter:
+        if use_channel_weight_filter:
             channel_present = win.sum(dim=0) > 0
             if not channel_present.any():
                 continue
-            kept_prom = float(prom_per_channel[i, channel_present].max().item())
-            if kept_prom < min_kept_prom:
+            kept_weight = float(weight_per_channel[i, channel_present].max().item())
+            if kept_weight < min_kept_weight:
                 continue
-        elif use_combo_prom_filter:
+        elif use_combo_weight_filter:
             combo_present = win.view(win.shape[0], n_pp, n_angles).sum(dim=(0, 2)) > 0
             if not combo_present.any():
                 continue
-            kept_prom = float(prom_per_combo[i, combo_present].max().item())
-            if kept_prom < min_kept_prom:
+            kept_weight = float(weight_per_combo[i, combo_present].max().item())
+            if kept_weight < min_kept_weight:
                 continue
         res_mask[i] = True
 

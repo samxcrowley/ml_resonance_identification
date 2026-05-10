@@ -106,7 +106,7 @@ def train(params):
         'contiguous_angle_crop_p': params.get('contiguous_angle_crop_p', 0.0),
         'shared_energy_crop_p': params.get('shared_energy_crop_p', 0.0),
         'inelastic_dropout_p': params.get('inelastic_dropout_p', 0.0),
-        'min_kept_prom': params.get('min_kept_prom', 0.0),
+        'min_kept_channel_weight': params.get('min_kept_channel_weight', 0.0),
     }
 
     curriculum_epochs = params.get('curriculum_epochs', 0)

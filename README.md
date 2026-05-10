@@ -77,7 +77,7 @@ coverage. The main crop parameters are:
   instead of being cropped independently.
 - `inelastic_dropout_p`: probability of keeping only elastic particle-pair
   combinations.
-- `min_kept_prom`: minimum resonance prominence required for a resonance to
+- `min_kept_channel_weight`: minimum resonance channel weight required for a resonance to
   remain a target after cropping.
 
 Additional augmentations can add log-space noise, amplitude scaling, or blur to
@@ -144,7 +144,7 @@ A params file is a flat JSON object. Its structure is roughly:
   "contiguous_angle_crop_p": 0.5,
   "shared_energy_crop_p": 0.5,
   "inelastic_dropout_p": 0.33,
-  "min_kept_prom": 0.25,
+  "min_kept_channel_weight": 0.25,
   "curriculum_epochs": 120,
 
   "noise_sigma_log10": 0.2,

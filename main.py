@@ -4,7 +4,6 @@ import os
 import sys
 from process.plotting import plot_results
 
-params_file = 'training_params.json'
 if len(sys.argv) == 2:
     params_file = sys.argv[1]
 

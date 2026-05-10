@@ -242,9 +242,7 @@ def process_json(data, n_y=512, clamp=1e-8):
 
 class ResonanceDataset(Dataset):
 
-    # channel_filter: 'elastic' (pp_in==pp_out), 'inelastic' (pp_in!=pp_out), or None
-    def __init__(self, path, crop_params=None, transform=None,
-                 crop_fn=None, channel_filter=None):
+    def __init__(self, path, crop_params=None, transform=None, crop_fn=None):
 
         saved = torch.load(path, weights_only=False)
         self.tensors = saved['tensors']
@@ -256,32 +254,9 @@ class ResonanceDataset(Dataset):
         }
         self.metadata = saved.get('metadata', default_metadata)
 
-        if channel_filter is not None:
-            self.apply_channel_filter(channel_filter)
-
         self.crop_params = crop_params or {}
         self.transform = transform
         self.crop_fn = crop_fn if crop_fn is not None else transforms._crop
-
-    def apply_channel_filter(self, channel_filter):
-
-        pp_combos = self.metadata.get('pp_combos', [])
-        n_angles = self.metadata['n_angles']
-
-        if channel_filter == 'elastic':
-            keep = [i for i, (pp_in, pp_out) in enumerate(pp_combos) if pp_in == pp_out]
-        elif channel_filter == 'inelastic':
-            keep = [i for i, (pp_in, pp_out) in enumerate(pp_combos) if pp_in != pp_out]
-        else:
-            raise ValueError(f"Unknown channel_filter: {channel_filter!r} (expected 'elastic' or 'inelastic')")
-
-        keep_cols = [i * n_angles + a for i in keep for a in range(n_angles)]
-        self.tensors = [t[:, keep_cols] for t in self.tensors]
-
-        filtered_pp = [pp_combos[i] for i in keep]
-        self.metadata = dict(self.metadata)
-        self.metadata['pp_combos'] = filtered_pp
-        self.metadata['n_pp_combos'] = len(filtered_pp)
 
     def __len__(self):
         return len(self.tensors)
@@ -303,19 +278,16 @@ class ResonanceDataset(Dataset):
 def open_data_file(path):
 
     if path.endswith('jsonl.gz'):
-
         with gzip.open(path, 'rb') as f:
             data = [json.loads(line) for line in f]
 
     elif path.endswith('gz'):
-
         with gzip.open(path, 'rb') as f:
             json_bytes = f.read()
             json_str = json_bytes.decode()
             data = json.loads(json_str)
 
     else:
-        
         print('Invalid data file type.')
         return None
 

@@ -26,16 +26,6 @@ train_stats = [
     'pi_loss',
 ]
 
-def _loader_kwargs(num_workers, persistent_workers):
-    kwargs = {
-        'num_workers': num_workers,
-        'pin_memory': True,
-    }
-    if num_workers > 0:
-        kwargs['persistent_workers'] = persistent_workers
-        kwargs['prefetch_factor'] = 4
-    return kwargs
-
 def run_epoch(n_epoch, model, loader, loss_fn, is_eval, optimiser, device, scaler=None):
 
     if is_eval:
@@ -164,23 +154,15 @@ def train(params):
     print(f'Training size: {len(train_dataset)}')
     print(f'Validation size: {len(val_dataset)}\n')
 
-    # Persistent workers cache dataset state. With curriculum_update_every > 1,
-    # use a staircase curriculum and recreate workers only at step boundaries.
-    use_persistent_train = (
-        (curriculum_epochs == 0 or curriculum_update_every > 1) and
-        num_workers > 0
-    )
-    use_persistent_val = (curriculum_epochs == 0) and (num_workers > 0)
-
     train_loader = DataLoader(train_dataset,
                               batch_size=batch_size,
                               shuffle=True,
-                              **_loader_kwargs(num_workers, use_persistent_train))
+                              num_workers=num_workers)
 
     val_loader = DataLoader(val_dataset,
                             batch_size=batch_size,
                             shuffle=False,
-                            **_loader_kwargs(num_workers, use_persistent_val))
+                            num_workers=num_workers)
 
     torch.backends.cudnn.benchmark = True
 
@@ -245,44 +227,23 @@ def train(params):
 
             if curriculum_epochs > 0:
 
-                should_update_curriculum = (
-                    epoch == 1 or
-                    epoch == curriculum_epochs or
-                    curriculum_update_every == 1 or
-                    ((epoch - 1) % curriculum_update_every == 0 and epoch < curriculum_epochs)
-                )
+                progress = min(1.0, epoch / curriculum_epochs)
+                base_dataset.crop_params['crop_energy'] = crop_energy_max * progress
+                base_dataset.crop_params['min_angles'] = round(n_angles - (n_angles - min_angles_final) * progress)
+                base_dataset.crop_params['min_pp_combos'] = round(n_pp - (n_pp - min_pp_combos_final) * progress)
+                base_dataset.crop_params['inelastic_dropout_p'] = inelastic_dropout_p_max * progress
 
-                if should_update_curriculum:
-                    progress = min(1.0, epoch / curriculum_epochs)
-                    base_dataset.crop_params['crop_energy'] = crop_energy_max * progress
-                    base_dataset.crop_params['min_angles'] = round(n_angles - (n_angles - min_angles_final) * progress)
-                    base_dataset.crop_params['min_pp_combos'] = round(n_pp - (n_pp - min_pp_combos_final) * progress)
-                    base_dataset.crop_params['inelastic_dropout_p'] = inelastic_dropout_p_max * progress
-
-                should_rebuild_train_loader = (
-                    should_update_curriculum and
-                    num_workers > 0 and
-                    (
-                        (curriculum_update_every > 1 and epoch > 1) or
-                        (curriculum_update_every == 1 and epoch == curriculum_epochs)
-                    )
-                )
-                if should_rebuild_train_loader:
-                    train_loader = DataLoader(train_dataset,
-                                              batch_size=batch_size,
-                                              shuffle=True,
-                                              **_loader_kwargs(num_workers, True))
+                train_loader = DataLoader(train_dataset,
+                                            batch_size=batch_size,
+                                            shuffle=True,
+                                            num_workers=num_workers)
 
             train_m = run_epoch(epoch, model, train_loader, loss_fn, False, optimiser, device, scaler)
 
             do_eval = epoch % eval_every_n == 0
             val_m = run_epoch(epoch, model, val_loader, loss_fn, True, optimiser, device) if do_eval else None
 
-            if scheduler_type == 'plateau':
-                if val_m is not None:
-                    scheduler.step(val_m['total_loss'])
-            else:
-                scheduler.step()
+            scheduler.step()
 
             results['epoch'].append(epoch)
 

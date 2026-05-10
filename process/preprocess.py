@@ -98,10 +98,10 @@ def compute_channel_weights(tensors, targets, metadata):
 
             window = tensor[inner_lo:inner_hi, :]
             dev = torch.where(window > FLOOR, (window - baseline).abs(), torch.zeros_like(window))
-            prom_per_channel = dev.max(dim=0).values.clamp(min=0.0)
+            weight_per_channel = dev.max(dim=0).values.clamp(min=0.0)
 
-            out_channel[s, r, :] = prom_per_channel
-            out_combo[s, r, :] = prom_per_channel.view(n_pp, n_angles).max(dim=1).values
+            out_channel[s, r, :] = weight_per_channel
+            out_combo[s, r, :] = weight_per_channel.view(n_pp, n_angles).max(dim=1).values
 
     return out_channel, out_combo
 

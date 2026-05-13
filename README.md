@@ -5,13 +5,7 @@ resonances in scattering cross-section data.
 
 The model operates on log-scaled differential cross-section tensors with a
 mask channel for missing or cropped regions. It predicts resonance
-properties such as energy, widths, and spin-parity assignments.
-
-## Workflow
-
-The project is organized around three main stages: data processing, training,
-and evaluation. Prediction and plotting scripts then apply trained models to
-experimental-style inputs and summarize their outputs.
+properties energy, widths, and spin-parity assignments.
 
 ## Data Processing
 

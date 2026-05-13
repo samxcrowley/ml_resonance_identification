@@ -7,15 +7,6 @@ The model operates on log-scaled differential cross-section tensors with a
 mask channel for missing or cropped regions. It predicts resonance
 properties such as energy, widths, and spin-parity assignments.
 
-## Setup
-
-Create a virtual environment and install the project requirements:
-
-```bash
-python -m venv venv
-venv/bin/pip install -r requirements.txt
-```
-
 ## Workflow
 
 The project is organized around three main stages: data processing, training,
@@ -25,7 +16,7 @@ experimental-style inputs and summarize their outputs.
 ## Data Processing
 
 The data-processing module converts raw resonance samples into tensors that can
-be consumed by the model. It handles loading, channel metadata, tensor shaping,
+be inputted to the model. It handles loading, channel metadata, tensor shaping,
 cropping, masking, and augmentation.
 
 Before cropping, each sample is stored as a log-scaled cross-section tensor with
@@ -173,34 +164,3 @@ The most important groups are:
   training and how noisy or blurred the visible regions can become.
 - `curriculum_epochs` ramps crop severity from easy to full-strength over the
   early part of training.
-
-## Evaluation
-
-Evaluation measures a trained run against processed synthetic test data. It
-loads a run checkpoint, compares predicted resonances with target resonances,
-and writes analysis metrics and plots back into the run directory.
-
-The model produces `n_queries` prediction slots per sample. Each slot predicts
-whether a resonance is present, its normalized energy, partial widths, and
-spin-parity information.
-
-Per sample, the main prediction tensors are:
-
-- `class`: `[Q, 2]`, no-resonance/resonance logits.
-- `energy`: `[Q, 1]`, normalized resonance energy.
-- `gamma`: `[Q, G]`, normalized partial widths.
-- `j`: `[Q, J]`, spin logits.
-- `pi`: `[Q, 2]`, parity logits.
-
-Here `Q` is `n_queries`, `G` is the maximum number of gamma channels, and `J`
-is the number of spin classes implied by `max_j`.
-
-The most relevant evaluation controls are the confidence threshold for accepted
-predictions and matching tolerances for deciding whether a predicted resonance
-matches a target.
-
-## Prediction And Analysis
-
-Prediction scripts apply trained checkpoints to experimental-style tensors and
-write structured prediction outputs. Analysis scripts then aggregate those
-outputs into comparison plots across runs, checkpoints, or model variants.

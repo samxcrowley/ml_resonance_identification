@@ -182,14 +182,14 @@ def _crop(
             if not channel_present.any():
                 continue
             kept_weight = float(weight_per_channel[i, channel_present].max().item())
-            if kept_weight < min_kept_weight:
+            if kept_weight < min_kept_channel_weight:
                 continue
         elif use_combo_weight_filter:
             combo_present = win.view(win.shape[0], n_pp, n_angles).sum(dim=(0, 2)) > 0
             if not combo_present.any():
                 continue
             kept_weight = float(weight_per_combo[i, combo_present].max().item())
-            if kept_weight < min_kept_weight:
+            if kept_weight < min_kept_channel_weight:
                 continue
         res_mask[i] = True
 

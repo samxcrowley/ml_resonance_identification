@@ -1,160 +1,94 @@
 # DETR Nuclear Scattering Resonance Identification
 
 This repository trains and applies a DETR-style model for identifying nuclear
-resonances in scattering cross-section data.
+resonances in scattering cross-section data. The model predicts resonance
+energy, partial widths, and spin-parity assignments from log-scaled
+cross-section tensors.
 
-The model operates on log-scaled differential cross-section tensors with a
-mask channel for missing or cropped regions. It predicts resonance
-properties energy, widths, and spin-parity assignments.
+## Setup
 
-## Data Processing
+Install the Python dependencies:
 
-The data-processing module converts raw resonance samples into tensors that can
-be inputted to the model. It handles loading, channel metadata, tensor shaping,
-cropping, masking, and augmentation.
+```bash
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
 
-Before cropping, each sample is stored as a log-scaled cross-section tensor with
-shape `[E, C]`, where:
+## Data Format
 
-- `E` is the number of energy grid points.
-- `C` is the number of observable channels.
-- `C = n_pp_combos * n_angles`, with one block of angle bins per particle-pair
-  combination.
+Preprocessed training datasets are saved as `.pt` files containing:
 
-After cropping, each model input has shape `[2, E, C]`:
+- `tensors`: log-scaled cross-section tensors with shape `[N, E, C]`.
+- `targets`: padded resonance labels for training.
+- `metadata`: channel and angle metadata.
 
-- Channel `0` is the log-scaled cross-section data.
-- Channel `1` is the visibility mask, where valid tensor regions are marked as
-  visible, and cropped or missing regions are masked out.
+Here `E` is the number of energy grid points and `C` is the number of observable
+channels. During training, random cropping converts each sample into a model
+input with shape `[2, E, C]`:
 
-During training, these are batched as `[N, 2, E, C]`.
+- channel `0`: log-scaled cross-section data.
+- channel `1`: visibility mask for available data.
 
-Targets are padded to a fixed maximum number of resonances per sample:
+Prediction samples should already be on the same grid/channel layout used for
+training. A single prediction sample is a `.pt` dict with:
 
-- `class`: `[R, 2]`, no-resonance/resonance labels.
-- `energy`: `[R, 1]`, normalized resonance energy.
-- `gamma`: `[R, G]`, normalized partial widths.
-- `gamma_mask`: `[R, G]`, valid-width mask.
-- `jpi_index`: `[R, 1]`, spin-parity assignment index.
+- `tensor`: one sample, either `[2, E, C]` or `[E, C]`.
+- `e_min`: lower energy bound in MeV.
+- `e_max`: upper energy bound in MeV.
 
-Here `R` is `max_resonances`, usually 20, and `G` is the maximum number of gamma channels
-defined by the nuclear header.
+## Preprocessing
 
-### Cropping
+Raw synthetic samples are converted into train/test (90\%/10\% split) `.pt` files with:
 
-Cropping simulates incomplete experimental coverage by removing regions from the
-input tensor and updating the visibility mask. The different cropping parameters
-are used to sample a range of experimental-like scenarios, as model learning
-is very sensitive to the exact pattern of available channels, angles, and energy
-coverage. The main crop parameters are:
+```bash
+python process/preprocess.py <pattern>
+```
 
-- `crop_energy`: maximum fraction of the energy axis that may be removed from a
-  kept channel.
-- `min_angles`: minimum number of angle bins to keep for each kept particle-pair
-  combination.
-- `min_pp_combos`: minimum number of particle-pair combinations to keep.
-- `max_pp_combos`: maximum number of particle-pair combinations to keep.
-- `elastic_max_pp_combos`: optional stricter maximum when an elastic-only crop is
-  sampled.
-- `contiguous_angle_crop_p`: probability that kept angles are one contiguous
-  angular window instead of a random subset.
-- `shared_energy_crop_p`: probability that kept channels share one energy window
-  instead of being cropped independently.
-- `inelastic_dropout_p`: probability of keeping only elastic particle-pair
-  combinations.
-- `min_kept_channel_weight`: minimum resonance channel weight required for a resonance to
-  remain a target after cropping.
+The script searches `data/raw/` for files matching `<pattern>` and writes:
 
-Additional augmentations can add log-space noise, amplitude scaling, or blur to
-the visible regions.
+```text
+data/preprocessed/<pattern>_train.pt
+data/preprocessed/<pattern>_test.pt
+```
+
+The preprocessing stage builds the uniform energy/channel tensors, target
+arrays, metadata, and channel-weight information used by training.
 
 ## Training
 
-Training is configuration-driven. A params file specifies the model settings,
-data paths, optimizer settings, checkpoint behaviour, and run metadata.
+Training is controlled by a JSON params file:
 
-Training writes run outputs under `out/runs/`, including the resolved
-configuration, checkpoints, training metrics, and diagnostic plots.
-
-The training module coordinates dataset loading, model construction,
-optimization, checkpointing, and metric logging. The model module contains the
-DETR architecture, prediction heads, matching logic, and loss computation.
-
-A params file is a flat JSON object. Its structure is roughly:
-
-```jsonc
-{
-  "model": "detr",
-  "run_name": "...",
-  "seed": 22,
-
-  "data_path": "...",
-  "header": "...",
-  "max_resonances": 20,
-  "n_entrances": 3,
-  "n_exits": 3,
-  "n_angles": 16,
-
-  "n_epochs": 600,
-  "batch_size": 256,
-  "lr": 1e-3,
-  "weight_decay": 1e-4,
-  "scheduler": "cosine",
-  "warmup_epochs": 10,
-  "eval_every_n": 10,
-  "best_after_epoch": 120,
-  "early_stop_patience": 80,
-  "snapshot_every": 25,
-
-  "d_transformer": 256,
-  "n_queries": 25,
-  "n_hidden": 512,
-  "n_head": 8,
-  "n_layers": 6,
-  "dropout_p": 0.1,
-  "norm": "batch",
-
-  "cost_class": 2.5,
-  "cost_energy": 2.5,
-  "cost_gamma": 4.0,
-  "cost_j": 0.5,
-  "cost_pi": 0.5,
-  "class_weights": [0.5, 1.0],
-
-  "crop_energy": 0.5,
-  "min_angles": 8,
-  "min_pp_combos": 1,
-  "max_pp_combos": 9,
-  "elastic_max_pp_combos": 1,
-  "contiguous_angle_crop_p": 0.5,
-  "shared_energy_crop_p": 0.5,
-  "inelastic_dropout_p": 0.33,
-  "min_kept_channel_weight": 0.25,
-  "curriculum_epochs": 120,
-
-  "noise_sigma_log10": 0.2,
-  "amplitude_scale": 0.3,
-  "gaussian_blur_sigma": 0.5,
-
-  "num_workers": 8,
-  "compile": true,
-  "grad_clip_norm": 1.0
-}
+```bash
+python main.py params/detr.json
 ```
 
-The most important groups are:
+The params file specifies the dataset path, nuclear header, model size,
+optimizer settings, cropping settings, and checkpoint behaviour. Training writes
+outputs under `out/runs/<run_id>/`, including:
 
-- Dataset fields define the processed tensor source, nuclear header, target
-  padding, and channel geometry.
-- Optimizer fields control run length, batch size, learning rate, weight decay,
-  warmup, and scheduling.
-- Evaluation and checkpoint fields control validation frequency, when best-model
-  selection starts, early stopping, and snapshot checkpoint cadence.
-- Model fields control the DETR hidden size, number of learned prediction
-  queries, transformer depth, attention heads, dropout, and normalization.
-- Loss fields weight the matching and training losses for class, energy, gamma,
-  spin, and parity predictions.
-- Cropping and augmentation fields control how much data is hidden during
-  training and how noisy or blurred the visible regions can become.
-- `curriculum_epochs` ramps crop severity from easy to full-strength over the
-  early part of training.
+- `params.json`: resolved run configuration.
+- `checkpoint.pt`: best model checkpoint.
+- `checkpoint_epoch*.pt`: optional snapshot checkpoints.
+- `train_results.csv` and `train_results.png`: training curves.
+
+## Prediction
+
+Run predictions for one trained checkpoint and one preprocessed experimental
+sample with:
+
+```bash
+python predict.py out/runs/<run_id>/checkpoint.pt data/exp/<sample>.pt --output out/predictions/<sample>.json
+```
+
+By default, `predict.py` loads `params.json` from the same directory as the
+checkpoint. If the params file is somewhere else, pass it explicitly:
+
+```bash
+python predict.py checkpoint.pt sample.pt --params path/to/params.json --output predictions.json
+```
+
+The script loads the model, runs the single sample, filters predictions using
+`CONF_THRESHOLD = 0.5`, prints a table, and optionally writes JSON containing
+the predicted energies, confidences, spin-parity assignments, partial widths,
+and total widths.

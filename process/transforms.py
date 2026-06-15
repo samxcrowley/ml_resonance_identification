@@ -37,15 +37,9 @@ def _crop(
     inelastic_dropout_p=0.0,
     min_kept_channel_weight=0.0):
 
-    VISIBILITY_WINDOW = 5
-
     E, C = tensor.shape
     n_pp = metadata.get('n_pp_combos', metadata['n_entrances'] * metadata['n_exits'])
     n_angles = metadata['n_angles']
-
-    max_resonances = target['energy'].shape[0]
-    energies = target['energy'].squeeze(1)
-    n_true = int(target['class'][:, 1].sum().item())
 
     natural_mask = (tensor > FLOOR).float()
     crop_mask = natural_mask.clone()
@@ -154,11 +148,45 @@ def _crop(
         if crop_mask.sum() == 0:
             crop_mask = natural_mask
 
+    return _finalise_crop(
+        tensor, crop_mask, target, metadata,
+        min_kept_channel_weight=min_kept_channel_weight,
+    )
+
+# apply a single pre-defined visibility mask uniformly to every sample with no curriculum
+def _apply_fixed_mask(tensor, target, metadata, mask=None, min_kept_channel_weight=0.0):
+
+    natural_mask = (tensor > FLOOR).float()
+
+    if mask is None:
+        crop_mask = natural_mask
+    else:
+        crop_mask = natural_mask * mask.to(dtype=tensor.dtype, device=tensor.device)
+
+    return _finalise_crop(
+        tensor, crop_mask, target, metadata,
+        min_kept_channel_weight=min_kept_channel_weight,
+    )
+
+VISIBILITY_WINDOW = 5
+
+# build model-ready [2, E, C] tensor from a mask and drop resonances that are masked out
+def _finalise_crop(tensor, crop_mask, target, metadata, min_kept_channel_weight=0.0):
+
+    E, C = tensor.shape
+    n_pp = metadata.get('n_pp_combos', metadata['n_entrances'] * metadata['n_exits'])
+    n_angles = metadata['n_angles']
+
+    max_resonances = target['energy'].shape[0]
+    energies = target['energy'].squeeze(1)
+    n_true = int(target['class'][:, 1].sum().item())
+
     # build output tensor [2, E, C]
     cropped_data = torch.where(crop_mask > 0, tensor, tensor.new_full((), FLOOR_FILL))
     cropped_tensor = torch.stack([cropped_data, crop_mask], dim=0)
 
-    # keep resonances with data within VISIBILITY_WINDOW bins of their energy
+    # keep resonances with data within a fixed physical energy window
+    # (5 bins at 512-bin resolution) of their energy
     # and kept_weight >= min_kept_channel_weight
     weight_per_channel = target.get('weight_per_channel') # [max_res, n_pp * n_angles]
     weight_per_combo = target.get('weight_per_combo') # [max_res, n_pp]

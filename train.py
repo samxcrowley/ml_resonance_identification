@@ -68,6 +68,7 @@ def run_epoch(n_epoch, model, loader, loss_fn, is_eval, optimiser, device, scale
                 optimiser.step()
 
         for stat in loss.keys():
+            stats.setdefault(stat, 0.0)
             stats[stat] += loss[stat].item() * tensor.size(0)
         
         n += tensor.size(0)
@@ -99,19 +100,50 @@ def train(params):
     header_name = params['header']
     header = Header(filename=header_name)
 
-    crop_params = {
-        'crop_energy': params['crop_energy'],
-        'min_angles': params['min_angles'],
-        'min_pp_combos': params['min_pp_combos'],
-        'max_pp_combos': params.get('max_pp_combos', 9),
-        'elastic_max_pp_combos': params.get('elastic_max_pp_combos', None),
-        'contiguous_angle_crop_p': params.get('contiguous_angle_crop_p', 0.0),
-        'shared_energy_crop_p': params.get('shared_energy_crop_p', 0.0),
-        'inelastic_dropout_p': params.get('inelastic_dropout_p', 0.0),
-        'min_kept_channel_weight': params.get('min_kept_channel_weight', 0.0),
-    }
+    # crop modes:
+    # 'crop' - random, curriculum cropping (default)
+    # 'fixed' - pre-defined mask loaded from params['mask_path']
+    # 'none'
+    crop_mode = params.get('crop_mode', 'crop')
 
-    curriculum_epochs = params.get('curriculum_epochs', 0)
+    if crop_mode == 'crop':
+
+        crop_fn = transforms._crop
+        crop_params = {
+            'crop_energy': params['crop_energy'],
+            'min_angles': params['min_angles'],
+            'min_pp_combos': params['min_pp_combos'],
+            'max_pp_combos': params.get('max_pp_combos', 9),
+            'elastic_max_pp_combos': params.get('elastic_max_pp_combos', None),
+            'contiguous_angle_crop_p': params.get('contiguous_angle_crop_p', 0.0),
+            'shared_energy_crop_p': params.get('shared_energy_crop_p', 0.0),
+            'inelastic_dropout_p': params.get('inelastic_dropout_p', 0.0),
+            'min_kept_channel_weight': params.get('min_kept_channel_weight', 0.0),
+        }
+
+        curriculum_epochs = params.get('curriculum_epochs', 0)
+
+    elif crop_mode == 'fixed' or crop_mode == 'none':
+
+        crop_fn = transforms._apply_fixed_mask
+
+        fixed_mask = None
+
+        if crop_mode == 'fixed':
+            mask_path = params['mask_path']
+            fixed_mask = torch.load(mask_path, map_location='cpu', weights_only=False)
+            if isinstance(fixed_mask, dict):
+                fixed_mask = fixed_mask.get('mask', fixed_mask.get('tensor'))
+            fixed_mask = fixed_mask.float()
+            print(f'Loaded fixed visibility mask from {mask_path} (shape {tuple(fixed_mask.shape)}).')
+
+        crop_params = {
+            'mask': fixed_mask,
+            'min_kept_channel_weight': params.get('min_kept_channel_weight', 0.0),
+        }
+
+        curriculum_epochs = 0
+
     curriculum_update_every = max(1, params.get('curriculum_update_every', 1))
 
     if curriculum_epochs > 0:
@@ -137,8 +169,13 @@ def train(params):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f'Using device: {device}\n')
 
-    channel_filter = params.get('channel_filter', None)
-    base_dataset = data.ResonanceDataset(data_path, crop_params, transform, crop_fn=transforms._crop, channel_filter=channel_filter)
+    base_dataset = data.ResonanceDataset(data_path, crop_params, transform, crop_fn=crop_fn)
+
+    if crop_mode == 'fixed':
+        data_shape = tuple(base_dataset.tensors[0].shape)
+        if tuple(fixed_mask.shape) != data_shape:
+            raise ValueError("Mask shape does not match data shape")
+
     dataset = base_dataset
     if n_subset != -1:
         n_subset = min(n_subset, len(base_dataset))

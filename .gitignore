@@ -11,6 +11,7 @@ notes.txt
 
 _testing.py
 inspect_sample.py
+*_metrics.py
 
 params/
 *_params.json

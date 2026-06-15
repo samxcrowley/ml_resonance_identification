@@ -188,8 +188,8 @@ def _finalise_crop(tensor, crop_mask, target, metadata, min_kept_channel_weight=
     # keep resonances with data within a fixed physical energy window
     # (5 bins at 512-bin resolution) of their energy
     # and kept_weight >= min_kept_channel_weight
-    weight_per_channel = target.get('weight_per_channel') # [max_res, n_pp * n_angles]
-    weight_per_combo = target.get('weight_per_combo') # [max_res, n_pp]
+    weight_per_channel = target.get('weight_per_channel', target.get('prominence_per_channel')) # [max_res, n_pp * n_angles]
+    weight_per_combo = target.get('weight_per_combo', target.get('prominence_per_combo')) # [max_res, n_pp]
     use_channel_weight_filter = weight_per_channel is not None and min_kept_channel_weight > 0.0
     use_combo_weight_filter = (
         not use_channel_weight_filter and

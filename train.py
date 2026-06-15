@@ -22,6 +22,8 @@ train_stats = [
     'class_loss',
     'energy_loss',
     'gamma_loss',
+    'gamma_partial_loss',
+    'gamma_total_loss',
     'j_loss',
     'pi_loss',
 ]
@@ -284,6 +286,8 @@ def train(params):
                             f'cls={m["class_loss"]:.4f} '
                             f'eng={m["energy_loss"]:.4f} '
                             f'gam={m["gamma_loss"]:.4f} '
+                            f'gpart={m["gamma_partial_loss"]:.4f} '
+                            f'gtot={m["gamma_total_loss"]:.4f} '
                             f'j={m["j_loss"]:.4f} '
                             f'pi={m["pi_loss"]:.4f}')
                 print(f'Epoch {epoch:03d}/{n_epochs}')

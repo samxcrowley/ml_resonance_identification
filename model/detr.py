@@ -147,13 +147,30 @@ class DETR_Loss(nn.Module):
         self.cost_gamma = self.params['cost_gamma']
         self.cost_j = self.params.get('cost_j', 0.5)
         self.cost_pi = self.params.get('cost_pi', 0.5)
-        self.class_weights = self.params['class_weights']
+        self.class_focal_alpha = self.params.get('class_focal_alpha', 0.25)
+        self.class_focal_gamma = self.params.get('class_focal_gamma', 2.0)
+        self.gamma_log_min = float(data.GAMMA_LOG_MIN)
+        self.gamma_log_max = float(data.GAMMA_LOG_MAX)
+        self.gamma_log_range = self.gamma_log_max - self.gamma_log_min
+        self.gamma_loss_beta_log10 = self.params.get('gamma_loss_beta_log10', 0.5)
+        self.gamma_partial_loss_weight = self.params.get('gamma_partial_loss_weight', 1.0)
+        self.gamma_total_loss_weight = self.params.get('gamma_total_loss_weight', 1.0)
+        self.gamma_loss_scale = self.params.get(
+            'gamma_loss_scale',
+            1.0 / (self.gamma_log_range * self.gamma_log_range)
+        )
 
         # jpi_set_index to j_index / pi_index lookups
         self.register_buffer('jpi_to_j',  header.get_jpi_to_j_index())
         self.register_buffer('jpi_to_pi', header.get_jpi_to_pi_index())
 
-        self.matcher = HungarianMatcher()
+        self.matcher = HungarianMatcher(
+            cost_class=self.params.get('matcher_cost_class', 1.0),
+            cost_energy=self.params.get('matcher_cost_energy', 1.0),
+            cost_gamma=self.params.get('matcher_cost_gamma', 0.0),
+            cost_j=self.params.get('matcher_cost_j', 1.0),
+            cost_pi=self.params.get('matcher_cost_pi', 1.0),
+        )
 
     def _focal_loss(self, pred_logits, targets, alpha=0.25, gamma=2.0):
         pred_logits_f = pred_logits.float()
@@ -163,6 +180,52 @@ class DETR_Loss(nn.Module):
         focal_weight = (1 - p_t) ** gamma
         alpha_t = torch.where(targets == 1, alpha, 1 - alpha)
         return (alpha_t * focal_weight * ce).mean()
+
+    def _normalised_gamma_to_log10(self, gamma):
+        return gamma * self.gamma_log_range + self.gamma_log_min
+
+    def _smooth_l1_from_error(self, error, beta):
+        abs_error = error.abs()
+        if beta <= 0.0:
+            return abs_error
+        return torch.where(
+            abs_error < beta,
+            0.5 * error.pow(2) / beta,
+            abs_error - 0.5 * beta
+        )
+
+    def _masked_logsumexp10(self, log10_values, valid_mask):
+        neg_inf = torch.finfo(log10_values.dtype).min
+        masked = log10_values.masked_fill(~valid_mask, neg_inf)
+        ln10 = log10_values.new_tensor(10.0).log()
+        return torch.logsumexp(masked * ln10, dim=-1) / ln10
+
+    def _gamma_losses(self, pred_gamma, target_gamma, gamma_mask):
+        valid_mask = gamma_mask > 0.0
+        if not valid_mask.any():
+            zero = pred_gamma.sum() * 0.0
+            return zero, zero
+
+        pred_log = self._normalised_gamma_to_log10(pred_gamma.float())
+        target_log = self._normalised_gamma_to_log10(target_gamma.float())
+
+        partial_error = pred_log - target_log
+        partial_loss = self._smooth_l1_from_error(
+            partial_error,
+            self.gamma_loss_beta_log10
+        )
+        partial_loss = (partial_loss * valid_mask.float()).sum() / valid_mask.sum().float()
+
+        valid_resonances = valid_mask.any(dim=-1)
+        pred_total_log = self._masked_logsumexp10(pred_log, valid_mask)
+        target_total_log = self._masked_logsumexp10(target_log, valid_mask)
+        total_error = pred_total_log[valid_resonances] - target_total_log[valid_resonances]
+        total_loss = self._smooth_l1_from_error(
+            total_error,
+            self.gamma_loss_beta_log10
+        ).mean()
+
+        return partial_loss * self.gamma_loss_scale, total_loss * self.gamma_loss_scale
 
     def prepare_targets(self, targets):
 
@@ -201,11 +264,13 @@ class DETR_Loss(nn.Module):
         
         N, n_queries = preds['class'].shape[:2]
 
-        loss_class = 0.0
-        loss_energy = 0.0
-        loss_gamma = 0.0
-        loss_j = 0.0
-        loss_pi = 0.0
+        loss_class = preds['class'].new_tensor(0.0)
+        loss_energy = preds['class'].new_tensor(0.0)
+        loss_gamma = preds['class'].new_tensor(0.0)
+        loss_gamma_partial = preds['class'].new_tensor(0.0)
+        loss_gamma_total = preds['class'].new_tensor(0.0)
+        loss_j = preds['class'].new_tensor(0.0)
+        loss_pi = preds['class'].new_tensor(0.0)
 
         for n in range(N):
 
@@ -218,11 +283,16 @@ class DETR_Loss(nn.Module):
             if len(pred_idx) > 0:
                 target_classes[pred_idx] = 1
 
-            loss_class += self._focal_loss(pred_classes, target_classes)
+            loss_class = loss_class + self._focal_loss(
+                pred_classes,
+                target_classes,
+                alpha=self.class_focal_alpha,
+                gamma=self.class_focal_gamma,
+            )
 
             if len(pred_idx) > 0:
 
-                loss_energy += F.l1_loss(
+                loss_energy = loss_energy + F.l1_loss(
                     preds['energy'][n][pred_idx],
                     targets[n]['energy'][target_idx].float().to(device)
                 )
@@ -230,8 +300,8 @@ class DETR_Loss(nn.Module):
                 target_j = targets[n]['j_index'][target_idx].to(device)
                 target_pi = targets[n]['pi'][target_idx].to(device)
 
-                loss_j += F.cross_entropy(preds['j'][n][pred_idx], target_j)
-                loss_pi += F.cross_entropy(preds['pi'][n][pred_idx], target_pi)
+                loss_j = loss_j + F.cross_entropy(preds['j'][n][pred_idx], target_j)
+                loss_pi = loss_pi + F.cross_entropy(preds['pi'][n][pred_idx], target_pi)
 
                 pred_gamma = preds['gamma'][n][pred_idx]
                 target_gamma = targets[n]['gamma'][target_idx].float().to(device)
@@ -245,12 +315,23 @@ class DETR_Loss(nn.Module):
                     target_gamma[nan_mask] = 0.0
                     gamma_mask[nan_mask] = 0.0
 
-                if gamma_mask.sum() > 0:
-                    loss_gamma += (F.mse_loss(pred_gamma, target_gamma, reduction='none') * gamma_mask).sum() / gamma_mask.sum()
+                gamma_partial, gamma_total = self._gamma_losses(
+                    pred_gamma,
+                    target_gamma,
+                    gamma_mask
+                )
+                loss_gamma_partial = loss_gamma_partial + gamma_partial
+                loss_gamma_total = loss_gamma_total + gamma_total
+                loss_gamma = loss_gamma + (
+                    self.gamma_partial_loss_weight * gamma_partial +
+                    self.gamma_total_loss_weight * gamma_total
+                )
             
         loss_class /= N
         loss_energy /= N
         loss_gamma /= N
+        loss_gamma_partial /= N
+        loss_gamma_total /= N
         loss_j /= N
         loss_pi /= N
 
@@ -265,15 +346,29 @@ class DETR_Loss(nn.Module):
             'class_loss': loss_class,
             'energy_loss': loss_energy,
             'gamma_loss': loss_gamma,
+            'gamma_partial_loss': loss_gamma_partial,
+            'gamma_total_loss': loss_gamma_total,
             'j_loss': loss_j,
             'pi_loss': loss_pi,
         }
 
 class HungarianMatcher(nn.Module):
 
-    def __init__(self):
+    def __init__(
+        self,
+        cost_class=1.0,
+        cost_energy=1.0,
+        cost_gamma=0.0,
+        cost_j=1.0,
+        cost_pi=1.0,
+    ):
 
         super().__init__()
+        self.cost_class = cost_class
+        self.cost_energy = cost_energy
+        self.cost_gamma = cost_gamma
+        self.cost_j = cost_j
+        self.cost_pi = cost_pi
 
     @torch.no_grad()
     def forward(self, preds, targets):
@@ -312,7 +407,32 @@ class HungarianMatcher(nn.Module):
             target_pi = targets[n]['pi'].to(pred_pi_probs.device)
             cost_pi = -pred_pi_probs[:, target_pi] # [n_queries, n_objects]
 
-            cost = cost_class + cost_energy + cost_j + cost_pi
+            cost = (
+                self.cost_class * cost_class +
+                self.cost_energy * cost_energy +
+                self.cost_j * cost_j +
+                self.cost_pi * cost_pi
+            )
+
+            if self.cost_gamma > 0.0:
+                pred_gamma = preds['gamma'][n]
+                target_gamma = targets[n]['gamma'].to(pred_gamma.device)
+                gamma_mask = targets[n]['gamma_mask'].to(pred_gamma.device)
+
+                finite_mask = target_gamma.isfinite()
+                valid_mask = (gamma_mask > 0) & finite_mask
+                target_gamma = torch.where(
+                    finite_mask,
+                    target_gamma,
+                    torch.zeros_like(target_gamma)
+                )
+
+                diff = (pred_gamma.unsqueeze(1) - target_gamma.unsqueeze(0)).abs()
+                diff = diff * valid_mask.unsqueeze(0).float()
+                denom = valid_mask.sum(dim=1).float().clamp(min=1.0)
+                cost_gamma = diff.sum(dim=2) / denom.unsqueeze(0)
+
+                cost = cost + self.cost_gamma * cost_gamma
 
             # Hungarian algorithm
             cost = cost.float().cpu().numpy()

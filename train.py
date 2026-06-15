@@ -141,7 +141,12 @@ def train(params):
     base_dataset = data.ResonanceDataset(data_path, crop_params, transform, crop_fn=transforms._crop, channel_filter=channel_filter)
     dataset = base_dataset
     if n_subset != -1:
-        dataset = Subset(base_dataset, np.arange(n_subset))
+        n_subset = min(n_subset, len(base_dataset))
+        subset_indices = torch.randperm(
+            len(base_dataset),
+            generator=torch.Generator().manual_seed(seed)
+        )[:n_subset]
+        dataset = Subset(base_dataset, subset_indices)
 
     train_size = int(0.8 * len(dataset))
     val_size = len(dataset) - train_size
